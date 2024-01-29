@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import torch
 
 #annular light source, where sigmain is the internal radius as a function of NA and sigma out is the external radius
-sigmain = 0.6
+sigmain = 0
 sigmaout = 0.8
 
 #off axis illumination weirdness
@@ -11,7 +11,7 @@ sigmashiftx = 0
 sigmashifty = 0
 
 pixelNumber = 64
-nmaperture=0.8 #lightsource NA
+nmaperture=0.7 #lightsource NA
 wavelength=193 #ArF excimer
 
 def calculateLightSource(device):

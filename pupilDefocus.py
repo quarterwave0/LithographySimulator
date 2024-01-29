@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 pixel = 64
 nmaperture = 0.7
 lamda = 193
-defocus = 20
+defocus = 0
 
 delta = 4/pixel
 kmax = 2

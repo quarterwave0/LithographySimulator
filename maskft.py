@@ -48,14 +48,16 @@ if __name__ == '__main__':
         print(f"Using CPU for Fraunhofer computation")
 
     mask = np.zeros((pixelNumber, pixelNumber), dtype=int)
-    mask[0, 0:64] = 1
-    mask[2, 0:64] = 1
-    mask[5, 0:64] = 1
-    mask[9, 0:64] = 1
+
+    mask[9:55, 16:20] = 1
+    mask[9:55, 25:29] = 1
+    mask[9:55, 34:38] = 1
+    mask[9:55, 43:47] = 1
 
     F_gpu, F = calculateFullFraunhofer(mask, device)
-    F_norm_gpu = torch.real(F_gpu @ torch.conj(F_gpu))
-    
+    #F_norm_gpu = torch.real(F_gpu * torch.conj(F_gpu)) #In the original matlab, this is a .* (elementwise), but I think they meant:
+    F_norm_gpu = torch.abs(F_gpu)
+
     #F = F_gpu.cpu()
     F_norm = F_norm_gpu.cpu()
 
@@ -66,5 +68,6 @@ if __name__ == '__main__':
     ax1.set_ylabel('Y Position (nm)')
 
     ax2.imshow(F_norm)
-    ax2.set_title('Diffraction Pattern')
+    ax2.set_title('Diffraction Pattern (Mag)')
+
     plt.show()

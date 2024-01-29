@@ -25,16 +25,19 @@ pixelSize = 25 #nanometers
 
 deltaK=4/pixelNumber #fn step size
 
-wavelength=193
+wavelength=193 #ArF excimer
 fraunhoferConstant = (-2*1j*np.pi)/wavelength
-knorm=1/wavelength
+#knorm=1/wavelength
 
-nmaperture=0.6
+nmaperture=0.7
 defocus=0
 
 mask = np.zeros((pixelNumber, pixelNumber), dtype=int)
 
-mask[39:59, 22:42] = 1
+mask[9:55, 16:20] = 1
+mask[9:55, 25:29] = 1
+mask[9:55, 34:38] = 1
+mask[9:55, 43:47] = 1
 
 Kbound = pixelNumber / 2 * deltaK
 pixelBound = pixelNumber / 2 * pixelSize
@@ -102,7 +105,8 @@ def aerial(F, O):
 
                 imagerr = calculateFullAerial(pupilshift, F)
 
-                imagers = torch.real(imagerr @ torch.conj(imagerr))
+                #imagers = torch.real(imagerr * torch.conj(imagerr)) #In the original matlab, this is a .* (elementwise), so the * is intentional, but I think they meant:
+                imagers = torch.abs(imagerr)
                 imagero = imagero + imagers
 
     return imagero, imagero.cpu()
@@ -132,7 +136,7 @@ if __name__ == '__main__':
     ax1.set_ylabel('Y Position (nm)')
 
     ax2.imshow(np.real(F_cpu @ np.conj(F_cpu)))
-    ax2.set_title('Diffraction Pattern')
+    ax2.set_title('Diffraction Pattern (Mag)')
 
     ax3.imshow(np.kron(mask, np.ones((pixelSize, pixelSize))))
     ax3.set_title('Mask')
