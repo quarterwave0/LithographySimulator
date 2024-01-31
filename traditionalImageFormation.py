@@ -1,10 +1,9 @@
-import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 import time
 import torch
 
-from maskft import calculateFullFraunhofer
+from mask import Mask
 from pupilDefocus import pupilf
 from illumination import calculateLightSource
 
@@ -26,18 +25,11 @@ pixelSize = 25 #nanometers
 deltaK=4/pixelNumber #fn step size
 
 wavelength=193 #ArF excimer
-fraunhoferConstant = (-2*1j*np.pi)/wavelength
-#knorm=1/wavelength
+fraunhoferConstant = (-2*1j*torch.pi)/wavelength
+#knorm=1/wavelength                                       #checkme, what's going on here?
 
 nmaperture=0.7
 defocus=0
-
-mask = np.zeros((pixelNumber, pixelNumber), dtype=int)
-
-mask[9:55, 16:20] = 1
-mask[9:55, 25:29] = 1
-mask[9:55, 34:38] = 1
-mask[9:55, 43:47] = 1
 
 Kbound = pixelNumber / 2 * deltaK
 pixelBound = pixelNumber / 2 * pixelSize
@@ -116,40 +108,41 @@ if __name__ == '__main__':
     print("Beginning simulation")
     t = time.time()
 
-    F, F_cpu = calculateFullFraunhofer(mask, device)
+    mask = Mask()
+    F = mask.fraunhofer(wavelength)
     fFraunhofer = time.time()
-    print(f"Fraunhofer computation complete in: {np.round(fFraunhofer-t, 2)} seconds")
+    print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
     O, O_cpu = calculateLightSource(device)
     fLightSource = time.time()
-    print(f"Light source computation complete in: {np.round(fLightSource - fFraunhofer, 2)} seconds")
+    print(f"Light source computation complete in: {round(fLightSource - fFraunhofer, 2)} seconds")
 
     aerialImage, aerialImageCPU = aerial(F, O)
     finish = time.time()
-    print(f"Aerial iamge computed in {np.round(finish-t, 2)} seconds")
+    print(f"Aerial iamge computed in {round(finish-t, 2)} seconds")
 
     fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2)
 
-    ax1.imshow(np.kron((aerialImageCPU), np.ones((pixelSize, pixelSize))))
+    ax1.imshow(torch.kron((aerialImageCPU), torch.ones((pixelSize, pixelSize))))
     ax1.set_title('Simulated Aerial Image')
     ax1.set_xlabel('X Position (nm)')
     ax1.set_ylabel('Y Position (nm)')
 
-    ax2.imshow(np.real(F_cpu @ np.conj(F_cpu)))
+    ax2.imshow(torch.real(F.cpu() @ torch.conj(F.cpu())))
     ax2.set_title('Diffraction Pattern (Mag)')
 
-    ax3.imshow(np.kron(mask, np.ones((pixelSize, pixelSize))))
+    ax3.imshow(torch.kron(mask.geometry.cpu(), torch.ones((pixelSize, pixelSize))))
     ax3.set_title('Mask')
     ax3.set_xlabel('X Position (nm)')
     ax3.set_ylabel('Y Position (nm)')
 
-    ax4.imshow(np.kron((O_cpu), np.ones((pixelSize, pixelSize))))
+    ax4.imshow(torch.kron((O_cpu), torch.ones((pixelSize, pixelSize))))
     ax4.set_title('Light Source')
 
-    ax5.imshow(np.real(pupilf))
+    ax5.imshow(torch.real(pupilf))
     ax5.set_title('Wavefront Error (Re)')
 
-    ax6.imshow(np.imag(pupilf))
+    ax6.imshow(torch.imag(pupilf))
     ax6.set_title('Wavefront Error (Imag)')
     
 
