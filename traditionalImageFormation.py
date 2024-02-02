@@ -4,8 +4,8 @@ import time
 import torch
 
 from mask import Mask
-from pupilDefocus import pupilf
-from illumination import calculateLightSource
+from pupil import pupilFunction
+from lightsource import LightSource
 
 if torch.cuda.is_available:
     device = torch.device('cuda')
@@ -16,20 +16,14 @@ else:
     print(f"Using CPU")
     print()
 
-pupilf = torch.asarray(pupilf)
-
 pixelNumber=64
-centerpoint=pixelNumber/2-1
+centerpoint=pixelNumber/2
 pixelSize = 25 #nanometers
 
 deltaK=4/pixelNumber #fn step size
 
 wavelength=193 #ArF excimer
 fraunhoferConstant = (-2*1j*torch.pi)/wavelength
-#knorm=1/wavelength                                       #checkme, what's going on here?
-
-nmaperture=0.7
-defocus=0
 
 Kbound = pixelNumber / 2 * deltaK
 pixelBound = pixelNumber / 2 * pixelSize
@@ -93,7 +87,7 @@ def aerial(F, O):
                     quc = 1 - shifty
                     qud = pixelNumber
 
-                pupilshift[int(pua):int(pub), int(qua):int(qub)] = pupilf[int(puc):int(pud), int(quc):int(qud)] #from pupilfunction64_defocus
+                pupilshift[int(pua):int(pub), int(qua):int(qub)] = pupilFunction[int(puc):int(pud), int(quc):int(qud)] #from pupilfunction64_defocus
 
                 imagerr = calculateFullAerial(pupilshift, F)
 
@@ -108,12 +102,13 @@ if __name__ == '__main__':
     print("Beginning simulation")
     t = time.time()
 
-    mask = Mask()
+    mask = Mask(device=device)
     F = mask.fraunhofer(wavelength)
     fFraunhofer = time.time()
     print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
-    O, O_cpu = calculateLightSource(device)
+    lightsource = LightSource(device=device)
+    O = lightsource.generateSource()
     fLightSource = time.time()
     print(f"Light source computation complete in: {round(fLightSource - fFraunhofer, 2)} seconds")
 
@@ -128,7 +123,7 @@ if __name__ == '__main__':
     ax1.set_xlabel('X Position (nm)')
     ax1.set_ylabel('Y Position (nm)')
 
-    ax2.imshow(torch.real(F.cpu() @ torch.conj(F.cpu())))
+    ax2.imshow(torch.abs(F.cpu()))
     ax2.set_title('Diffraction Pattern (Mag)')
 
     ax3.imshow(torch.kron(mask.geometry.cpu(), torch.ones((pixelSize, pixelSize))))
@@ -136,13 +131,15 @@ if __name__ == '__main__':
     ax3.set_xlabel('X Position (nm)')
     ax3.set_ylabel('Y Position (nm)')
 
-    ax4.imshow(torch.kron((O_cpu), torch.ones((pixelSize, pixelSize))))
+    ax4.imshow(O.cpu())
     ax4.set_title('Light Source')
+    ax4.set_xlabel('σ in X (λ/NA)')
+    ax4.set_ylabel('σ in Y (λ/NA)')
 
-    ax5.imshow(torch.real(pupilf))
+    ax5.imshow(torch.real(pupilFunction))
     ax5.set_title('Wavefront Error (Re)')
 
-    ax6.imshow(torch.imag(pupilf))
+    ax6.imshow(torch.imag(pupilFunction))
     ax6.set_title('Wavefront Error (Imag)')
     
 
