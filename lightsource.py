@@ -19,7 +19,7 @@ class LightSource:
         #When we use sigma as a radius like this, we are referring to the partial coherence factor. This tends to be defined as the spot diameter of the lightsource (or sin(theta) of the max incident angle)
         #divided by the projection NA or diameter of the entrance pupil. Since, in the Abbe formulation of PCI, each point generates an image, lower sigma means less "smear" (read: better contrast).
         #in a physics sense, our diffraction patterns can be seen as smeared shadows of our extended light source, with larger sources leaving less contrast because of the larger angles of incidence
-        #https://www.lithoguru.com/scientist/CHE323/Lecture45.pdf, chapter 12 of hecht and chapter 2 of mack also have some good insights.
+        #https://www.lithoguru.com/scientist/CHE323/Lecture45.pdf, chapter 12 of [7] and chapter 2 of [8] also have some good insights.
         #For annular/quasar sources the inner and outer are defined both in the terms of pcf, that is, in terms of the ratio the inner radius and outer radius take of the NAc/NAp
         self.sigmaInner = sigmaIn 
         self.sigmaOuter = sigmaOut

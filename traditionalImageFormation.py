@@ -54,8 +54,7 @@ def calculateFullAerial(pupil, diffractionPattern):
 
 def aerial(F, O):
     imagero = torch.zeros((pixelNumber, pixelNumber), device=device)
-    imagers = torch.zeros((pixelNumber, pixelNumber), device=device)
-
+    
     for j in tqdm(range(pixelNumber), desc="Abbe Image Formation", leave=True, colour='blue'):
         for k in range(pixelNumber):
             pupilshift = torch.zeros((pixelNumber, pixelNumber), dtype=torch.complex64, device=device)

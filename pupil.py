@@ -12,7 +12,7 @@ sigmaSpan = 2
 deltaSigma = sigmaSpan*2/pixelNumber
 
 Z3 = defocus*NA**2/(4*wavelength)
-#Equation 3.24 of mack
+#Equation 3.24 of [8]
 
 def addPhaseError(o):
 

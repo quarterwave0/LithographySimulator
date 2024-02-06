@@ -34,3 +34,4 @@ Note: It is very important to note that the prior paper, Gao 2023, provided the 
 5. M. Guthaus, “mguthaus/DimmiLitho,” (2021).
 6. P. Evanschitzky, A. Erdmann, and T. Fuehner, “Extended Abbe approach for fast and accurate lithography imaging simulations,” in 25th European Mask and Lithography Conference, pp. 1–11 (2009) [doi:10.1117/12.835168].
 7. E. Hecht, Optics, Pearson Education, Incorporated (2017).
+8. C. Mack, Fundamental Principles of Optical Lithography: The Science of Microfabrication, John Wiley & Sons (2008).
