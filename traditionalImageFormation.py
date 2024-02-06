@@ -69,7 +69,7 @@ def aerial(F, O):
                     pua = 1 + shiftx
                     pub = pixelNumber
                     puc = 1
-                    pud = pixelNumber-shiftx
+                    pud = pixelNumber - shiftx
                 else:
                     pua = 1
                     pub = pixelNumber + shiftx
@@ -78,9 +78,9 @@ def aerial(F, O):
 
                 if (shifty >= 0):
                     qua = 1 + shifty
-                    qub = pixelNumber + shifty
+                    qub = pixelNumber #+ shifty
                     quc = 1 
-                    qud = pixelNumber-shifty
+                    qud = pixelNumber - shifty
                 else:
                     qua = 1
                     qub = pixelNumber + shifty
@@ -92,8 +92,7 @@ def aerial(F, O):
                 imagerr = calculateFullAerial(pupilshift, F)
 
                 #imagers = torch.real(imagerr * torch.conj(imagerr)) #In the original matlab, this is a .* (elementwise), so the * is intentional, but I think they meant:
-                imagers = torch.abs(imagerr)
-                imagero = imagero + imagers
+                imagero = imagero + torch.abs(imagerr)
 
     return imagero, imagero.cpu()
 
