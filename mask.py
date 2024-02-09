@@ -31,9 +31,7 @@ class Mask:
         self._deltaK = 4 / self.pixelNumber
         self._Kbound = self.pixelNumber / 2 * self._deltaK
 
-    def fraunhofer(self, wavelength: int) -> torch.Tensor: #todo add FFT or FT selector
-        #create all needed tensors
-
+    def fraunhofer(self, wavelength: int) -> torch.Tensor: #TODO: add FFT or FT selector
         fraunhoferConstant = (2*1j*torch.pi)/wavelength
 
         kx = torch.arange(-self._Kbound, self._Kbound, self._deltaK, dtype = torch.float32, device=self.device)
@@ -49,7 +47,6 @@ class Mask:
         k_grid = k_grid.unsqueeze(2).unsqueeze(2)
         xy_grid = xy_grid.unsqueeze(0).unsqueeze(0)
 
-        #solve the fraunhofer
         solution = torch.zeros((self.pixelNumber, self.pixelNumber), dtype=torch.complex64, device=self.device)
         exponent = torch.sum((k_grid * xy_grid), dim=-1) * fraunhoferConstant
 

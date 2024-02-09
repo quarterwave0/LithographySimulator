@@ -56,8 +56,8 @@ if __name__ == '__main__':
     ax.imshow(sourcePattern)
     ax.set_title('Light Source Geometry')
 
-    #projectionLens = plt.Circle((ls.pixelNumber/2, ls.pixelNumber/2), ls.pixelNumber/4, color='r',fill=False)
-    projectionLens = plt.Circle((0.5, 0.5), 1, color='r',fill=False)
+    projectionLens = plt.Circle((ls.pixelNumber/2, ls.pixelNumber/2), ls.pixelNumber/4, color='r',fill=False)
+    #projectionLens = plt.Circle((0.5, 0.5), 1, color='r',fill=False)
     ax.add_patch(projectionLens)
 
     plt.show()
