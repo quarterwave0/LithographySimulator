@@ -12,10 +12,12 @@ def generateZ(m, n, pixelNumber, coeff, device):
     #kudos to [5] for some hints on this
 
     sigmaSpan = 2
-    x = torch.arange(-sigmaSpan, sigmaSpan, sigmaSpan*2/pixelNumber, dtype=torch.float32, device=device)
+    deltaSigma = sigmaSpan*2/pixelNumber
+
+    x = torch.arange(-sigmaSpan, sigmaSpan, deltaSigma, dtype=torch.float32, device=device)
     X, Y = torch.meshgrid((x, x), indexing='xy')
 
-    r = (X**2+Y**2)
+    r = torch.sqrt(X**2 + Y**2)
     theta = torch.arctan2(Y, X)
 
     lLim = int((n-abs(m))/2)
@@ -35,8 +37,8 @@ def generateZ(m, n, pixelNumber, coeff, device):
     else:
         Z = coeff * -Nmn * R * torch.sin(m*theta)
 
-    mask = torch.where(r>=1, 0, 1)
-    return Z*mask
+    #return torch.where(r>=1, 0, Z)
+    return torch.where(r<=1, Z, 0)
 
 def OSAindexToMN(ji): #TODO: add the annoying fringe indexing system
     #eq (4.39) and (4.40) in [2]
