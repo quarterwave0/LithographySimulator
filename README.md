@@ -1,10 +1,9 @@
 ## About
-LithographySimulator (full name TBD) is an open source tool/toy for modeling optical lithography. 
+LithographySimulator (full name TBD) is an open-source tool/toy for modeling optical lithography. 
 
-In the current state, it simulates partial coherence imaging with the Abbe formulation, Fraunhofer  mask diffraction with binary masks, basic support for annular and classical light sources, and rudimentary pupil defocus support.
+In its current state, it simulates partial coherence imaging with the Abbe formulation, Fraunhofer mask diffraction with binary masks, basic support for annular and classical light sources, and arbitrary aberration modeling.
 
-It uses PyTorch for either GPU and CPU acceleration, depending on devices support, and can be reasonably agile when computing the Fourier transform. The main limiting factor will be VRAM and/or system RAM, as the current approach is very memory intensive and has yet to be set up for scaling.
-
+It uses PyTorch for either GPU and CPU acceleration, depending on device support, and can be reasonably agile when computing the Fourier transform. The main limiting factor will be VRAM or system RAM, as the current approach is very memory intensive and has yet to be set up for scaling.
 
 ## Goals
 Right now, although it mostly works, there's still a lot that could be done to improve it. These goals are arranged roughly in order of priority. This is a side project for me, and as such some or all of these may go uncompleted permanently.
