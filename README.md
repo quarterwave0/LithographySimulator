@@ -9,9 +9,9 @@ It uses PyTorch for either GPU and CPU acceleration, depending on devices suppor
 ## Goals
 Right now, although it mostly works, there's still a lot that could be done to improve it. These goals are arranged roughly in order of priority. This is a side project for me, and as such some or all of these may go uncompleted permanently.
 
-- [ ] Refactor architecture to be more usable (Objects, perhaps, rather than the current approach with haphazard application of global variables)
-- [ ] Add support for Zernike polynomial modeling of optical wavefront error for the pupil function. Currently, only defocus is supported
-- [ ] Validate  correctness of the lithography model, either by testing against known-correct models or through formally validating the mathematics inside the program.
+- [x] Refactor architecture to be more usable (Objects, perhaps, rather than the current approach with haphazard application of global variables)
+- [x] Add support for Zernike polynomial modeling of optical wavefront error for the pupil function. Currently, only defocus is supported
+- [ ] Validate correctness of the lithography model, either by testing against known-correct models or through formally validating the mathematics inside the program.
 - [ ] Add FFT approximation as appears in [1] alongside the classical solver
 - [ ] Fix the memory management, so that it's possible to compute more than a small field on normal systems
 - [ ] Add GDSII/OASIS import

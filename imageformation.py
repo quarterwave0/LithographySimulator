@@ -65,7 +65,7 @@ def abbeImage(maskFT, pupilF, lightsource, pixelSize, wavelength, device):
 if __name__ == '__main__':
     import time
     from matplotlib import pyplot as plt
-    from pupil import pupilFunction
+    from pupil import Pupil
     from lightsource import LightSource
     from mask import Mask
 
@@ -79,6 +79,7 @@ if __name__ == '__main__':
         print()
         
     wavelength = 193 #ArF
+    aberrations = [0, 0, 0.01, 0, 100, 0.01, 0, 0.01, 0.01, 0.01]
 
     print("Beginning simulation")
     t = time.time()
@@ -92,6 +93,9 @@ if __name__ == '__main__':
     ls = lightsource.generateSource()
     fLightSource = time.time()
     print(f"Light source computation complete in: {round(fLightSource - fFraunhofer, 2)} seconds")
+
+    pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, device=device)
+    pupilFunction = pupil.generatePupilFunction()
 
     aerialImage = abbeImage(maskFT, pupilFunction, ls, mask.pixelSize, wavelength, device)
     finish = time.time()
@@ -117,10 +121,10 @@ if __name__ == '__main__':
     ax4.set_xlabel('σ in X (λ/NA)')
     ax4.set_ylabel('σ in Y (λ/NA)')
 
-    ax5.imshow(torch.real(pupilFunction))
+    ax5.imshow(torch.real(pupilFunction.cpu()))
     ax5.set_title('Wavefront Error (Re)')
 
-    ax6.imshow(torch.imag(pupilFunction))
+    ax6.imshow(torch.imag(pupilFunction.cpu()))
     ax6.set_title('Wavefront Error (Imag)')
     
 
