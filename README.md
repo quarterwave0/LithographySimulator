@@ -1,9 +1,9 @@
 ## About
 LithographySimulator (full name TBD) is an open-source tool/toy for modeling optical lithography. 
 
-In its current state, it simulates partial coherence imaging with the Abbe formulation, Fraunhofer mask diffraction with binary masks, basic support for annular and classical light sources, and arbitrary aberration modeling.
+In its current state, it simulates partial coherence imaging with the Abbe formulation, Fraunhofer mask diffraction with binary masks, support for annular, quasar, and classical light sources, and arbitrary aberration modeling.
 
-It uses PyTorch for either GPU and CPU acceleration, depending on device support, and can be reasonably agile when computing the Fourier transform. The main limiting factor will be VRAM or system RAM, as the current approach is very memory intensive and has yet to be set up for scaling.
+Depending on device support, it uses PyTorch for either GPU or CPU acceleration and can be reasonably agile when computing the Fourier transform. The main limiting factor will be VRAM or system RAM, as the current approach is very memory intensive and has yet to be set up for scaling.
 
 ## Goals
 Right now, although it mostly works, there's still a lot that could be done to improve it. These goals are arranged roughly in order of priority. This is a side project for me, and as such some or all of these may go uncompleted permanently.
@@ -25,7 +25,7 @@ Right now, although it mostly works, there's still a lot that could be done to i
 ## Acknowledgment and Citations
 1. T.-S. Gau et al., “Ultra-fast aerial image simulation algorithm using wavelength scaling and fast Fourier transformation to speed up calculation by more than three orders of magnitude,” JM3 22(2), 023201, SPIE (2023) [doi:10.1117/1.JMM.22.2.023201].
 
-Note: It is very important to note that the prior paper, Gao 2023, provided the starting code for this project. The original MATLAB code is available on request from the corresponding author. I translated the code into Python in a sensible manner and improved performance, but the physics underlying this model is owed solely,  thus far, to this paper's code. As progress continues, the degree of similarity is likely to change.
+Note: It is very important to note that the prior paper, Gao 2023, provided the starting code for this project. The original MATLAB code is available on request from the corresponding author. I translated the code into Python in a sensible manner and improved performance, but the physics underlying this model is owed solely, thus far, to this paper's code. As progress continues, the degree of similarity is likely to change.
 
 2. B. J. Lin, Optical Lithography: Here is why, SPIE (2021).
 3. X. Wu et al., “Efficient source mask optimization with Zernike polynomial functions for source representation,” Opt. Express, OE 22(4), 3924–3937, Optica Publishing Group (2014) [doi:10.1364/OE.22.003924].
