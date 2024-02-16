@@ -27,7 +27,7 @@ class LightSource:
         self.shiftX = shiftX #Units of wavelength/NA, so if we have 1 for this shift value it will shift by an entire sigma -- that is, ending up on the edge of the pupil.
         self.shiftY = shiftY
 
-    def generateSource(self) -> torch.Tensor:
+    def generateAnnular(self) -> torch.Tensor:
 
         sigmaSpan = 2 #We want to show from +2sigma to -2sigma, such that -1 to 1 are shown in the center for the pupil function
         deltaSigma = sigmaSpan*2/self.pixelNumber #step size, since we want a tensor of pixelNumber size, and sigmaSpan is half
@@ -44,20 +44,50 @@ class LightSource:
         lightsource = torch.where((O >= self.sigmaInner) & (O <= self.sigmaOuter), 1, 0)
 
         return lightsource
+    
+    def generateQuasar(self, count, rotation) -> torch.Tensor:
+
+        sigmaSpan = 2
+        deltaSigma = sigmaSpan*2/self.pixelNumber
+
+        sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float32, device=self.device)
+        sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float32, device=self.device)
+
+        sX, sY = torch.meshgrid((sigmaX, sigmaY), indexing='xy')
+        O = torch.sqrt(sX**2 + sY**2)
+        theta = torch.atan2(sY, sX) + rotation # angle to any given spot from origin
+        theta %= 2*torch.pi #wrap around to stay on the unit circle
+
+        annularForm = torch.where((O >= self.sigmaInner) & (O <= self.sigmaOuter), 1, 0)
+
+        angularSpacing = (torch.pi / count)
+        lightsource = annularForm
+
+        for gap in range(count):
+            lightsource = lightsource * torch.where(((gap+gap)*angularSpacing<theta) & (theta<(gap+gap+1)*angularSpacing), 0, 1)
+
+        return lightsource
+
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
 
-    ls = LightSource()
-    sourcePattern = ls.generateSource().cpu()
+    ls = LightSource(sigmaIn=0.4, sigmaOut=0.8)
 
-    fig, ax = plt.subplots(1)
+    annular = ls.generateAnnular().cpu()
+    quasar = ls.generateQuasar(4, -torch.pi/(4*2)).cpu()
 
-    ax.imshow(sourcePattern)
-    ax.set_title('Light Source Geometry')
+    fig, (ax1, ax2) = plt.subplots(2)
+
+    ax1.imshow(annular)
+    ax1.set_title('Annular Light Source')
+
+    ax2.imshow(quasar)
+    ax2.set_title('Quasar Light Source')
 
     projectionLens = plt.Circle((ls.pixelNumber/2, ls.pixelNumber/2), ls.pixelNumber/4, color='r',fill=False)
-    #projectionLens = plt.Circle((0.5, 0.5), 1, color='r',fill=False)
-    ax.add_patch(projectionLens)
+    ax1.add_patch(projectionLens)
+    projectionLens2 = plt.Circle((ls.pixelNumber/2, ls.pixelNumber/2), ls.pixelNumber/4, color='r',fill=False)
+    ax2.add_patch(projectionLens2)
 
     plt.show()

@@ -18,7 +18,7 @@ Right now, although it mostly works, there's still a lot that could be done to i
 - [ ] 2D solver for lithography recipe generation
 - [ ] Attach an optimizer to create a simple ILT system
 - [ ] Add mask export, perhaps manufacturability checks also
-- [ ] Allow for more complicated light sources like quasar or quadrupole
+- [x] Allow for more complicated light sources like quasar or quadrupole
 - [ ] Solver for phase shifting masks, likely FDTD or waveguide
 - [ ] Add SOCS Hopkins, as the TCC greatly accelerates the simulation process by allowing the variation of a mask with pre-computed system optical characteristics
 
