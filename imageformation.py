@@ -89,12 +89,12 @@ if __name__ == '__main__':
     fFraunhofer = time.time()
     print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
-    lightsource = LightSource(device=device)
-    ls = lightsource.generateSource()
+    lightsource = LightSource(sigmaIn=0.4, sigmaOut=0.8, device=device)
+    ls = lightsource.generateQuasar(4, -torch.pi/(4*2))
     fLightSource = time.time()
     print(f"Light source computation complete in: {round(fLightSource - fFraunhofer, 2)} seconds")
 
-    pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, device=device)
+    pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, aberrations, device=device)
     pupilFunction = pupil.generatePupilFunction()
 
     aerialImage = abbeImage(maskFT, pupilFunction, ls, mask.pixelSize, wavelength, device)
@@ -118,8 +118,6 @@ if __name__ == '__main__':
 
     ax4.imshow(ls.cpu())
     ax4.set_title('Light Source')
-    ax4.set_xlabel('σ in X (λ/NA)')
-    ax4.set_ylabel('σ in Y (λ/NA)')
 
     ax5.imshow(torch.real(pupilFunction.cpu()))
     ax5.set_title('Wavefront Error (Re)')
