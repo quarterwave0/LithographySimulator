@@ -7,13 +7,13 @@ def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, d
     Kbound = pixelNumber / 2 * deltaK
     pixelBound = pixelNumber / 2 * pixelSize
 
-    kx = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float32, device=device) 
-    ky = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float32, device=device)
+    kx = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float16, device=device) 
+    ky = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float16, device=device)
     KX, KY = torch.meshgrid(kx,ky, indexing='xy')
     k_grid = torch.stack((KX, KY), dim=-1)
 
-    xs = torch.arange(-pixelBound, pixelBound, pixelSize, dtype = torch.float32, device=device)
-    ys = torch.arange(-pixelBound, pixelBound, pixelSize, dtype = torch.float32, device=device)
+    xs = torch.arange(-pixelBound, pixelBound, pixelSize, dtype = torch.float16, device=device)
+    ys = torch.arange(-pixelBound, pixelBound, pixelSize, dtype = torch.float16, device=device)
     XS, YS = torch.meshgrid(xs,ys,indexing='xy')
     xy_grid = torch.stack((XS, YS), axis=-1)
 
@@ -21,11 +21,11 @@ def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, d
     xy_grid = xy_grid.unsqueeze(0).unsqueeze(0)
 
     solution = torch.zeros((pixelNumber, pixelNumber), dtype=torch.complex64, device=device)
-    exponent = torch.sum((k_grid * xy_grid), dim=-1) * fraunhoferConstant
+    exponent = torch.sum((k_grid * xy_grid), dim=-1, dtype=torch.complex64) * fraunhoferConstant
 
     intermediate = pupil * maskFT * torch.exp(exponent)
 
-    solution = torch.sum(intermediate, axis=(2,3))
+    solution = torch.trapz(torch.trapz(intermediate, dim=3), dim=2)
 
     return solution
 
@@ -39,12 +39,12 @@ def abbeImage(maskFT, pupilF, lightsource, pixelSize, wavelength, device):
     pupilOnDevice = pupilF.to(device)
     pupilshift = torch.zeros((pixelNumber*2, pixelNumber*2, pixelNumber, pixelNumber), dtype=torch.complex64, device=device)
 
-    a = torch.arange(0, pixelNumber, 1, dtype=torch.int32, device=device)
-    b = torch.arange(0, pixelNumber, 1, dtype=torch.int32, device=device)
+    a = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
+    b = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
     A, B = torch.meshgrid((a, b), indexing='xy')
 
-    i = torch.arange(0, pixelNumber, 1, dtype=torch.int32, device=device)
-    j = torch.arange(0, pixelNumber, 1, dtype=torch.int32, device=device)
+    i = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
+    j = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
     I, J = torch.meshgrid((i, j), indexing='xy')
     Iu = I.unsqueeze(-1).unsqueeze(-1)
     Ju = J.unsqueeze(-1).unsqueeze(-1)

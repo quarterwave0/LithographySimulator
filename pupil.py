@@ -3,7 +3,7 @@ from math import factorial, sqrt, ceil
 
 class Pupil:
 
-    def __init__(self, pixelNumber: int = 64, wavelength: int = 193, NA: torch.float32 = 0.7, aberrations: torch.Tensor = None, device: torch.device=None):
+    def __init__(self, pixelNumber: int = 64, wavelength: int = 193, NA: torch.float16 = 0.7, aberrations: torch.Tensor = None, device: torch.device=None):
 
         if type(device) is torch.device:
             self.device = device
@@ -46,7 +46,7 @@ def generateZ(m, n, pixelNumber, coeff, device):
     sigmaSpan = 2
     deltaSigma = sigmaSpan*2/pixelNumber
 
-    x = torch.arange(-sigmaSpan, sigmaSpan, deltaSigma, dtype=torch.float32, device=device)
+    x = torch.arange(-sigmaSpan, sigmaSpan, deltaSigma, dtype=torch.float16, device=device)
     X, Y = torch.meshgrid((x, x), indexing='xy')
 
     r = torch.sqrt(X**2 + Y**2)
@@ -55,7 +55,7 @@ def generateZ(m, n, pixelNumber, coeff, device):
     lLim = int((n-abs(m))/2)
     ilLim = int((n+abs(m))/2)
 
-    Rmn = torch.zeros((lLim+1, pixelNumber, pixelNumber), dtype=torch.float32, device=device)
+    Rmn = torch.zeros((lLim+1, pixelNumber, pixelNumber), dtype=torch.float16, device=device)
     for k in range(lLim+1):
         staticCoeff = ((-1)**k * factorial(n-k)) / (factorial(k)*factorial(ilLim-k)*factorial(lLim-k))
         intm = staticCoeff * r**(n-2*k)
@@ -82,7 +82,7 @@ def OSAindexToMN(ji): #TODO: add the annoying fringe indexing system
     return m, n
 
 def generateWavefrontError(aberrations, pixelNumber, NA, wavelength, device):
-    WE = torch.zeros((pixelNumber, pixelNumber), dtype=torch.float32, device=device)
+    WE = torch.zeros((pixelNumber, pixelNumber), dtype=torch.float16, device=device)
 
     if(len(aberrations)>=4):
         aberrations[4] = aberrations[4]*NA**2/(4*wavelength) #eq (3.24) of [8]
@@ -93,14 +93,14 @@ def generateWavefrontError(aberrations, pixelNumber, NA, wavelength, device):
         Z = generateZ(m, n, pixelNumber, coeff, device)
         WE = WE + Z
 
-    return WE
+    return WE.type(torch.complex64)
 
 def generatePhi(WE, pixelNumber, device):
     phi = torch.exp(1j*2*torch.pi*WE)
 
     sigmaSpan = 2
     deltaSigma = sigmaSpan*2/pixelNumber
-    x = torch.arange(-sigmaSpan, sigmaSpan, deltaSigma, dtype=torch.float32, device=device)
+    x = torch.arange(-sigmaSpan, sigmaSpan, deltaSigma, dtype=torch.float16, device=device)
     X, Y = torch.meshgrid((x, x), indexing='xy')
     r = torch.sqrt(X**2 + Y**2)
 

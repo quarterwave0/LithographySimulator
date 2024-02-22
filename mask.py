@@ -16,13 +16,13 @@ class Mask:
         if (geometry is None or type(geometry) is not torch.Tensor) or (len(geometry.size()) != 2 or geometry.size()[0] != geometry.size[1]): #First, does it exist? Second, is it the right shape
             print("Mask not defined or invalid. Check that it is a torch tensor and is square. Using demo instead.")
             self.pixelNumber = 64
-            self.geometry = torch.zeros((self.pixelNumber, self.pixelNumber), dtype=int, device=self.device)
+            self.geometry = torch.zeros((self.pixelNumber, self.pixelNumber), dtype=torch.int16, device=self.device)
             self.geometry[9:55, 16:20] = 1
             self.geometry[9:55, 25:29] = 1
             self.geometry[9:55, 34:38] = 1
             self.geometry[9:55, 43:47] = 1
         else:
-            self.geometry = geometry.to(dtype=int, device=self.device)
+            self.geometry = geometry.to(dtype=torch.int16, device=self.device)
             self.pixelNumber = self.geometry.size()[0]
 
         self.pixelSize = pixelSize
@@ -34,13 +34,13 @@ class Mask:
     def fraunhofer(self, wavelength: int) -> torch.Tensor: #TODO: add FFT or FT selector
         fraunhoferConstant = (2*1j*torch.pi)/wavelength
 
-        kx = torch.arange(-self._Kbound, self._Kbound, self._deltaK, dtype = torch.float32, device=self.device)
-        ky = torch.arange(-self._Kbound, self._Kbound, self._deltaK, dtype = torch.float32, device=self.device)
+        kx = torch.arange(-self._Kbound, self._Kbound, self._deltaK, dtype = torch.float16, device=self.device)
+        ky = torch.arange(-self._Kbound, self._Kbound, self._deltaK, dtype = torch.float16, device=self.device)
         KX, KY = torch.meshgrid(kx,ky, indexing='xy')
         k_grid = torch.stack((KX, KY), dim=-1)
         
-        xs = torch.arange(-self._pixelBound, self._pixelBound, self.pixelSize, dtype = torch.float32, device=self.device)
-        ys = torch.arange(-self._pixelBound, self._pixelBound, self.pixelSize, dtype = torch.float32, device=self.device)
+        xs = torch.arange(-self._pixelBound, self._pixelBound, self.pixelSize, dtype = torch.float16, device=self.device)
+        ys = torch.arange(-self._pixelBound, self._pixelBound, self.pixelSize, dtype = torch.float16, device=self.device)
         XS, YS = torch.meshgrid(xs,ys,indexing='xy')
         xy_grid = torch.stack((XS, YS), dim=-1)
 
@@ -48,10 +48,10 @@ class Mask:
         xy_grid = xy_grid.unsqueeze(0).unsqueeze(0)
 
         solution = torch.zeros((self.pixelNumber, self.pixelNumber), dtype=torch.complex64, device=self.device)
-        exponent = torch.sum((k_grid * xy_grid), dim=-1) * fraunhoferConstant
+        exponent = torch.sum((k_grid * xy_grid), dim=-1, dtype=torch.complex64) * fraunhoferConstant
 
         intermediate = self.geometry * torch.exp(exponent)
-        solution = torch.sum(intermediate, dim=(2,3))
+        solution = torch.trapz(torch.trapz(intermediate, dim=3), dim=2)
 
         return solution
     

@@ -2,7 +2,7 @@ import torch
 
 class LightSource:
 
-    def __init__(self, sigmaIn: torch.float32=0, sigmaOut: torch.float32=0.6, pixelNumber: int=64, NA: torch.float32=0.7, shiftX: int = 0, shiftY: int = 0, device: torch.device=None):
+    def __init__(self, sigmaIn: torch.float16=0, sigmaOut: torch.float16=0.6, pixelNumber: int=64, NA: torch.float16=0.7, shiftX: int = 0, shiftY: int = 0, device: torch.device=None):
 
         if type(device) is torch.device:
             self.device = device
@@ -32,8 +32,8 @@ class LightSource:
         sigmaSpan = 2 #We want to show from +2sigma to -2sigma, such that -1 to 1 are shown in the center for the pupil function
         deltaSigma = sigmaSpan*2/self.pixelNumber #step size, since we want a tensor of pixelNumber size, and sigmaSpan is half
 
-        sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float32, device=self.device)
-        sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float32, device=self.device)
+        sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float16, device=self.device)
+        sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float16, device=self.device)
         #Units of wavelength/NA, where the unit circle sigma=1 will always be the lens apeture size. Refer to eq 2.86 from mack
         #The key here is that when we calculate the Zernike polynomial, it exists on the unit circle, while our light source (provided sigma<1) will exist within the pupil space
         #We don't need fancy unit juggling here or within the pupil function, because we define the units now and can convert to xy using the NA and wavelength later
@@ -50,12 +50,12 @@ class LightSource:
         sigmaSpan = 2
         deltaSigma = sigmaSpan*2/self.pixelNumber
 
-        sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float32, device=self.device)
-        sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float32, device=self.device)
+        sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float16, device=self.device)
+        sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float16, device=self.device)
 
         sX, sY = torch.meshgrid((sigmaX, sigmaY), indexing='xy')
         O = torch.sqrt(sX**2 + sY**2)
-        theta = torch.atan2(sY, sX) + rotation # angle to any given spot from origin
+        theta = torch.atan2(sY, sX) + rotation #angle to any given spot from origin
         theta %= 2*torch.pi #wrap around to stay on the unit circle
 
         annularForm = torch.where((O >= self.sigmaInner) & (O <= self.sigmaOuter), 1, 0)
