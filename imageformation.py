@@ -29,7 +29,30 @@ def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, d
 
     return solution
 
-def abbeImage(maskFT, pupilF, lightsource, pixelSize, wavelength, device):
+def calculateFFTAerial(pf, maskFFFT, pixelNumber, epsilon, N, device):
+
+    pfAmplitudeProduct = pf * maskFFFT
+    paddingWidth = (N-pixelNumber) // 2
+
+    padder = torch.nn.ConstantPad2d(paddingWidth, 0)
+    paddedPFA = padder(pfAmplitudeProduct)
+
+    standardFormPPFA = torch.fft.fftshift(paddedPFA) #back into fft order
+    abbeFFT = torch.fft.fft2(standardFormPPFA) #TODO: why is this fft2 instead of ifft2?
+    unrolledFFT = torch.fft.ifftshift(abbeFFT)
+    usqAbbe = torch.abs(unrolledFFT.unsqueeze(0).unsqueeze(0)).to(torch.float32)
+
+    aerial = torch.nn.functional.interpolate(usqAbbe, scale_factor=(1/epsilon), mode='bilinear', align_corners=True).to(torch.float16).squeeze(0).squeeze(0)
+
+    extraSize = (aerial.size()[0] - (pixelNumber+(2*paddingWidth))) // 2 + paddingWidth
+    trimmedAerial = aerial[extraSize:extraSize+pixelNumber, extraSize:extraSize+pixelNumber] #TODO: This is busted
+
+    return trimmedAerial
+
+def abbeImage(mask, maskFT: torch.Tensor, pupilF: torch.Tensor, lightsource: torch.Tensor, pixelSize: int, deltaK: float, wavelength:int, fft: bool, device: torch.device):
+
+    if fft:
+        epsilon, N = Mask.calculateEpsilonN(self=mask, deltaK=deltaK, pixelSize=pixelSize, wavelength=wavelength)
 
     pixelNumber = maskFT.size()[0]
     fraunhoferConstant = (-2*1j*torch.pi)/wavelength
@@ -58,7 +81,12 @@ def abbeImage(maskFT, pupilF, lightsource, pixelSize, wavelength, device):
     for i in range(pixelNumber):
         for j in range(pixelNumber):
             if (lightsource[i, j] > 0): #Suprisingly, this is appreciably faster than the equivalent multiplication process. TODO: Rework later to be efficient w/ zeroes on the aerial instead of doing it here
-                image = image + torch.abs(calculateAerial(psTrim[:, :, j, i], maskFT, fraunhoferConstant, pixelNumber, pixelSize, device))
+
+                if not fft:
+                    image = image + torch.abs(calculateAerial(psTrim[:, :, j, i], maskFT, fraunhoferConstant, pixelNumber, pixelSize, device))
+                else:
+                    new = calculateFFTAerial(psTrim[:, :, j, i], maskFT, pixelNumber, epsilon, N, device)
+                    image = image + new
 
     return torch.abs(image)
 
@@ -85,7 +113,7 @@ if __name__ == '__main__':
     t = time.time()
 
     mask = Mask(device=device)
-    maskFT = mask.fraunhofer(wavelength)
+    maskFFFT = mask.fraunhofer(wavelength, True)
     fFraunhofer = time.time()
     print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
@@ -97,7 +125,7 @@ if __name__ == '__main__':
     pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, aberrations, device=device)
     pupilFunction = pupil.generatePupilFunction()
 
-    aerialImage = abbeImage(maskFT, pupilFunction, ls, mask.pixelSize, wavelength, device)
+    aerialImage = abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device) #- abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device)
     finish = time.time()
     print(f"Aerial iamge computed in {round(finish-t, 2)} seconds")
 
@@ -108,7 +136,7 @@ if __name__ == '__main__':
     ax1.set_xlabel('X Position (nm)')
     ax1.set_ylabel('Y Position (nm)')
 
-    ax2.imshow(torch.abs(maskFT.cpu()))
+    ax2.imshow(torch.abs(maskFFFT.cpu()))
     ax2.set_title('Diffraction Pattern (Mag)')
 
     ax3.imshow(torch.kron(mask.geometry.cpu(), torch.ones((mask.pixelSize, mask.pixelSize))))
