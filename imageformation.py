@@ -32,17 +32,17 @@ def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, d
 def calculateFFTAerial(pf, maskFFFT, pixelNumber, epsilon, N, device):
 
     pfAmplitudeProduct = pf * maskFFFT
-    paddingWidth = (N-pixelNumber) // 2
 
+    paddingWidth = (N-pixelNumber) // 2
     padder = torch.nn.ConstantPad2d(paddingWidth, 0)
     paddedPFA = padder(pfAmplitudeProduct)
 
     standardFormPPFA = torch.fft.fftshift(paddedPFA) #back into fft order
-    abbeFFT = torch.fft.fft2(standardFormPPFA) #TODO: why is this fft2 instead of ifft2?
+    abbeFFT = torch.fft.ifft2(standardFormPPFA, norm='forward') #TODO: why is this ifft2 instead of fft2 like it is in the matlab source code? Bizzare offset otherwise.
     unrolledFFT = torch.fft.ifftshift(abbeFFT)
     usqAbbe = torch.abs(unrolledFFT.unsqueeze(0).unsqueeze(0)).to(torch.float32)
 
-    aerial = torch.nn.functional.interpolate(usqAbbe, scale_factor=(1/epsilon), mode='bilinear', align_corners=True).to(torch.float16).squeeze(0).squeeze(0)
+    aerial = torch.nn.functional.interpolate(usqAbbe, scale_factor=(1/epsilon), mode='bilinear').to(torch.float16).squeeze(0).squeeze(0)
 
     extraSize = (aerial.size()[0] - (pixelNumber+(2*paddingWidth))) // 2 + paddingWidth
     trimmedAerial = aerial[extraSize:extraSize+pixelNumber, extraSize:extraSize+pixelNumber] #TODO: This is busted
@@ -76,7 +76,7 @@ def abbeImage(mask, maskFT: torch.Tensor, pupilF: torch.Tensor, lightsource: tor
     #there are Px x Px fields of Px x Px (1) where each (1) field has the pupil function where it is illuminated by the light source at a different position within it.
     # A and B represent every position in our un-padded field, and I and J respectively slide the pupil around our padded pupilshift space by broadcasting the AB grid across itself grid through addition
     # such that A begins at 1 for I = 1, etc.
-    psTrim = pupilshift.narrow(0, 31, 64).narrow(1, 31, 64) #trim off the padding
+    psTrim = pupilshift.narrow(0, 31, 64).narrow(1, 31, 64) #trim off the padding TODO: make this dynamic
 
     for i in range(pixelNumber):
         for j in range(pixelNumber):
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, aberrations, device=device)
     pupilFunction = pupil.generatePupilFunction()
 
-    aerialImage = abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device) #- abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device)
+    aerialImage = abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device) #- abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, False, device)
     finish = time.time()
     print(f"Aerial iamge computed in {round(finish-t, 2)} seconds")
 

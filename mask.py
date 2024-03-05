@@ -84,7 +84,7 @@ class Mask:
 
         usqMask = self.geometry.unsqueeze(0).unsqueeze(0).to(torch.float32)
 
-        scaledMask = torch.nn.functional.interpolate(usqMask, scale_factor=epsilon, mode='bilinear', align_corners=True).squeeze(0).squeeze(0)
+        scaledMask = torch.nn.functional.interpolate(usqMask, scale_factor=epsilon, mode='bilinear').squeeze(0).squeeze(0)
         extraSize = (scaledMask.size()[0] - self.pixelNumber) // 2
         sTrimmedMask = scaledMask[extraSize:extraSize+self.pixelNumber, extraSize:extraSize+self.pixelNumber]
 
