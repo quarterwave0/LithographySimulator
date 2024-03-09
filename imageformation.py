@@ -38,14 +38,14 @@ def calculateFFTAerial(pf, maskFFFT, pixelNumber, epsilon, N, device):
     paddedPFA = padder(pfAmplitudeProduct)
 
     standardFormPPFA = torch.fft.fftshift(paddedPFA) #back into fft order
-    abbeFFT = torch.fft.ifft2(standardFormPPFA, norm='forward') #TODO: why is this ifft2 instead of fft2 like it is in the matlab source code? Bizzare offset otherwise.
+    abbeFFT = torch.fft.ifft2(standardFormPPFA, s=(N, N), norm='forward') #TODO: why is this ifft2 instead of fft2 like it is in the matlab source code? Bizzare offset otherwise
     unrolledFFT = torch.fft.ifftshift(abbeFFT)
     usqAbbe = torch.abs(unrolledFFT.unsqueeze(0).unsqueeze(0)).to(torch.float32)
 
     aerial = torch.nn.functional.interpolate(usqAbbe, scale_factor=(1/epsilon), mode='bilinear').to(torch.float16).squeeze(0).squeeze(0)
 
-    extraSize = (aerial.size()[0] - (pixelNumber+(2*paddingWidth))) // 2 + paddingWidth
-    trimmedAerial = aerial[extraSize:extraSize+pixelNumber, extraSize:extraSize+pixelNumber] #TODO: This is busted
+    extraSize = int((aerial.size()[0] - (pixelNumber+(2*paddingWidth))) / 2 + paddingWidth) #TODO: Make this not bad
+    trimmedAerial = aerial[extraSize:extraSize+pixelNumber, extraSize:extraSize+pixelNumber]
 
     return trimmedAerial
 
@@ -108,12 +108,14 @@ if __name__ == '__main__':
         
     wavelength = 193 #ArF
     aberrations = [0, 0, 0.01, 0, 100, 0.01, 0, 0.01, 0.01, 0.01]
+    fft = True
 
     print("Beginning simulation")
     t = time.time()
 
     mask = Mask(device=device)
-    maskFFFT = mask.fraunhofer(wavelength, True)
+    maskFT = mask.fraunhofer(wavelength, fft)
+    
     fFraunhofer = time.time()
     print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
@@ -125,7 +127,8 @@ if __name__ == '__main__':
     pupil = Pupil(mask.pixelNumber, wavelength, lightsource.NA, aberrations, device=device)
     pupilFunction = pupil.generatePupilFunction()
 
-    aerialImage = abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, True, device) #- abbeImage(mask, maskFFFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, False, device)
+    aerialImage = abbeImage(mask, maskFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, fft, device)
+
     finish = time.time()
     print(f"Aerial iamge computed in {round(finish-t, 2)} seconds")
 
@@ -136,7 +139,7 @@ if __name__ == '__main__':
     ax1.set_xlabel('X Position (nm)')
     ax1.set_ylabel('Y Position (nm)')
 
-    ax2.imshow(torch.abs(maskFFFT.cpu()))
+    ax2.imshow(torch.abs(maskFT.cpu()))
     ax2.set_title('Diffraction Pattern (Mag)')
 
     ax3.imshow(torch.kron(mask.geometry.cpu(), torch.ones((mask.pixelSize, mask.pixelSize))))

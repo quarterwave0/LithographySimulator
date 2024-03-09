@@ -93,7 +93,7 @@ class Mask:
         paddedMask = padder(sTrimmedMask)
 
         standardForm = torch.fft.fftshift(paddedMask)
-        fraunhoferFFT = torch.fft.fft2(standardForm)
+        fraunhoferFFT = torch.fft.fft2(standardForm, s=(N, N), norm="backward")
         unrolledFFFT = torch.fft.ifftshift(fraunhoferFFT)
         trimmedFFFT = unrolledFFFT[paddingWidth:paddingWidth+self.pixelNumber, paddingWidth:paddingWidth+self.pixelNumber]
 
