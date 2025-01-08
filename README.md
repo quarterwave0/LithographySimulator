@@ -5,6 +5,8 @@ Currently, it simulates partial coherence imaging with the Abbe formulation, Fra
 
 Depending on device support it uses PyTorch for GPU or CPU acceleration and can be reasonably agile when computing the aerial image. The main limiting factor will be VRAM or system RAM, as the current approach is very memory intensive.
 
+![image](https://github.com/user-attachments/assets/bd68ebfc-20ad-4fec-95bf-31748b02c3e5)
+
 ## Goals
 Right now, although it mostly works, a lot could still be done to improve it. Expect that much of this is incomplete in perpetuity, however, I do look over the code from time to time. Never say never!
 
