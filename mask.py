@@ -57,26 +57,14 @@ class Mask:
 
             return solution
     
-    def _nearest2SqInt(self, input): #find the nearest integer beta that is a power of two
-        guess = 256
-
-        while True:
-            if input < guess:
-                if input < guess // 2:
-                    guess = guess // 2
-                elif((guess // 2) - input > guess - input): #the correct answer is one of the two currently held
-                    return guess // 2 #next is closer
-                else:
-                    return guess #current is closer
-            elif input > guess:
-                guess = guess * 2
-            else: #equals
-                return guess
+    def _nearest2SqInt(self, input: float): #find the nearest integer beta that is a power of two
+        squares = torch.tensor([2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384], dtype=torch.int16, device=self.device)
+        return squares[torch.argmin(torch.abs(squares - input))].item()
 
     def calculateEpsilonN(self, deltaK, pixelSize, wavelength):
-        B = ((deltaK*pixelSize)/wavelength)**-1
-        N = self._nearest2SqInt(B)
-        epsilon = N/B
+        beta = ((deltaK*pixelSize)/wavelength)**-1
+        N = self._nearest2SqInt(beta)
+        epsilon = N/beta
 
         return epsilon, N
 

@@ -97,7 +97,11 @@ if __name__ == '__main__':
     from lightsource import LightSource
     from mask import Mask
 
-    if torch.cuda.is_available:
+    if torch.backends.mps.is_available():
+        device = torch.device('mps')
+        print(f"Using MPS")
+        print()
+    elif torch.cuda.is_available:
         device = torch.device('cuda')
         print(f"Using {torch.cuda.get_device_name(device)}")
         print()
