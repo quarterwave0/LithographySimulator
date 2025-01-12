@@ -3,11 +3,11 @@ import torch
 def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, device):
     pixelNumber = maskFT.size()[0]
     deltaK=4/pixelNumber #k-grid step size
-    
+
     Kbound = pixelNumber / 2 * deltaK
     pixelBound = pixelNumber / 2 * pixelSize
 
-    kx = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float16, device=device) 
+    kx = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float16, device=device)
     ky = torch.arange(-Kbound, Kbound, deltaK, dtype = torch.float16, device=device)
     KX, KY = torch.meshgrid(kx,ky, indexing='xy')
     k_grid = torch.stack((KX, KY), dim=-1)
@@ -29,66 +29,52 @@ def calculateAerial(pupil, maskFT, fraunhoferConstant, pixelNumber, pixelSize, d
 
     return solution
 
-def calculateFFTAerial(pf, maskFFFT, pixelNumber, epsilon, N, device):
+def calculateFFTAerial(pf, maskFFFT, pixelNumber, N):
 
     pfAmplitudeProduct = pf * maskFFFT
 
-    paddingWidth = (N-pixelNumber) // 2
-    padder = torch.nn.ConstantPad2d(paddingWidth, 0)
-    paddedPFA = padder(pfAmplitudeProduct)
+    pW = (N-pixelNumber) // 2
+    paddedPFA = torch.nn.functional.pad(pfAmplitudeProduct, (pW, pW, pW, pW), mode='constant', value=0)
 
     standardFormPPFA = torch.fft.fftshift(paddedPFA) #back into fft order
-    abbeFFT = torch.fft.ifft2(standardFormPPFA, s=(N, N), norm='forward') #TODO: why is this ifft2 instead of fft2 like it is in the matlab source code? Bizzare offset otherwise
+    abbeFFT = torch.fft.ifft2(standardFormPPFA, norm='forward') #TODO: why is this ifft2 instead of fft2 like it is in the matlab source code? Bizzare offset otherwise
     unrolledFFT = torch.fft.ifftshift(abbeFFT)
-    usqAbbe = torch.abs(unrolledFFT.unsqueeze(0).unsqueeze(0)).to(torch.float32)
 
-    aerial = torch.nn.functional.interpolate(usqAbbe, scale_factor=(1/epsilon), mode='bilinear').to(torch.float16).squeeze(0).squeeze(0)
+    trimmedFFT = unrolledFFT[pW:pW + pixelNumber, pW:pW + pixelNumber]
 
-    extraSize = int((aerial.size()[0] - (pixelNumber+(2*paddingWidth))) / 2 + paddingWidth) #TODO: Make this not bad
-    trimmedAerial = aerial[extraSize:extraSize+pixelNumber, extraSize:extraSize+pixelNumber]
+    return trimmedFFT
 
-    return trimmedAerial
-
-def abbeImage(mask, maskFT: torch.Tensor, pupilF: torch.Tensor, lightsource: torch.Tensor, pixelSize: int, deltaK: float, wavelength:int, fft: bool, device: torch.device):
+def abbeImage(mask, maskFT: torch.Tensor, pupilF: torch.Tensor, lightsource: torch.Tensor, pixelSize: int, deltaK: float, wavelength: torch.float16, fft: bool, device: torch.device):
 
     if fft:
         epsilon, N = Mask.calculateEpsilonN(self=mask, deltaK=deltaK, pixelSize=pixelSize, wavelength=wavelength)
+    else:
+        fraunhoferConstant = (-2 * 1j * torch.pi) / wavelength
 
     pixelNumber = maskFT.size()[0]
-    fraunhoferConstant = (-2*1j*torch.pi)/wavelength
 
     image = torch.zeros((pixelNumber, pixelNumber), dtype=torch.complex64, device=device)
 
     pupilOnDevice = pupilF.to(device)
-    pupilshift = torch.zeros((pixelNumber*2, pixelNumber*2, pixelNumber, pixelNumber), dtype=torch.complex64, device=device)
+    x_y_shifts = (torch.argwhere(lightsource) - (pixelNumber // 2)).to(torch.int)
+    ls_points = x_y_shifts.shape[0]
 
-    a = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
-    b = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
-    A, B = torch.meshgrid((a, b), indexing='xy')
+    for i in range(ls_points):
+        pupil_shift = torch.roll(pupilOnDevice, shifts=(x_y_shifts[i, 0], x_y_shifts[i, 1]), dims=(0, 1))
+        if not fft:
+            image += torch.abs(calculateAerial(pupil_shift, maskFT, fraunhoferConstant, pixelNumber, pixelSize, device))**2
+        else:
+            image += torch.abs(calculateFFTAerial(pupil_shift, maskFT, pixelNumber, N))**2
 
-    i = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
-    j = torch.arange(0, pixelNumber, 1, dtype=int, device=device)
-    I, J = torch.meshgrid((i, j), indexing='xy')
-    Iu = I.unsqueeze(-1).unsqueeze(-1)
-    Ju = J.unsqueeze(-1).unsqueeze(-1)
-    
-    pupilshift[(A+Iu), (B+Ju), Iu, Ju] = pupilOnDevice
-    #there are Px x Px fields of Px x Px (1) where each (1) field has the pupil function where it is illuminated by the light source at a different position within it.
-    # A and B represent every position in our un-padded field, and I and J respectively slide the pupil around our padded pupilshift space by broadcasting the AB grid across itself grid through addition
-    # such that A begins at 1 for I = 1, etc.
-    psTrim = pupilshift.narrow(0, 31, 64).narrow(1, 31, 64) #trim off the padding TODO: make this dynamic
+    if fft:
+        image = torch.abs(image) #bug in MPS
+        image = torch.nn.functional.interpolate(image.unsqueeze(0).unsqueeze(0), scale_factor=(1 / epsilon),
+                                                mode='bilinear').squeeze(0).squeeze(0)
+        pW = (pixelNumber - round(pixelNumber / epsilon)) // 2
+        corr = image.shape[0] % 2
+        image = torch.nn.functional.pad(image, (pW, pW + corr, pW, pW + corr), mode='constant', value=0)
 
-    for i in range(pixelNumber):
-        for j in range(pixelNumber):
-            if (lightsource[i, j] > 0): #Suprisingly, this is appreciably faster than the equivalent multiplication process. TODO: Rework later to be efficient w/ zeroes on the aerial instead of doing it here
-
-                if not fft:
-                    image = image + torch.abs(calculateAerial(psTrim[:, :, j, i], maskFT, fraunhoferConstant, pixelNumber, pixelSize, device))
-                else:
-                    new = calculateFFTAerial(psTrim[:, :, j, i], maskFT, pixelNumber, epsilon, N, device)
-                    image = image + new
-
-    return torch.abs(image)
+    return torch.real(image)
 
 if __name__ == '__main__':
     import time
@@ -109,17 +95,16 @@ if __name__ == '__main__':
         device = torch.device('cpu')
         print(f"Using CPU")
         print()
-        
-    wavelength = 193 #ArF
-    aberrations = [0, 0, 0.01, 0, 100, 0.01, 0, 0.01, 0.01, 0.01]
+
+    wavelength = 193. #ArF
+    aberrations = torch.tensor([0, 0, 0.01, 0, 100, 0.01, 0, 0.01, 0.01, 0.01], dtype=torch.float16, device=device)
     fft = True
 
     print("Beginning simulation")
     t = time.time()
 
-    mask = Mask(device=device)
+    mask = Mask(device=device, pixelSize=25)
     maskFT = mask.fraunhofer(wavelength, fft)
-    
     fFraunhofer = time.time()
     print(f"Fraunhofer computation complete in: {round(fFraunhofer-t, 2)} seconds")
 
@@ -134,9 +119,9 @@ if __name__ == '__main__':
     aerialImage = abbeImage(mask, maskFT, pupilFunction, ls, mask.pixelSize, mask.deltaK, wavelength, fft, device)
 
     finish = time.time()
-    print(f"Aerial iamge computed in {round(finish-t, 2)} seconds")
+    print(f"Aerial image computed in {round(finish-t, 2)} seconds")
 
-    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2)
+    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, dpi=300)
 
     ax1.imshow(torch.kron((aerialImage.cpu()), torch.ones((mask.pixelSize, mask.pixelSize))))
     ax1.set_title('Simulated Aerial Image')
@@ -159,6 +144,6 @@ if __name__ == '__main__':
 
     ax6.imshow(torch.imag(pupilFunction.cpu()))
     ax6.set_title('Wavefront Error (Imag)')
-    
 
+    fig.tight_layout()
     plt.show()

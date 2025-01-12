@@ -6,6 +6,10 @@ class LightSource:
 
         if type(device) is torch.device:
             self.device = device
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+            print(f"No device defined for light source! Using MPS.")
+            print()
         elif torch.cuda.is_available:
             self.device = torch.device('cuda')
             print(f"No device defined for light source! Using {torch.cuda.get_device_name(self.device)}.")
@@ -17,7 +21,7 @@ class LightSource:
         self.NA = NA #being the projection NA
         
         #When we use sigma as a radius like this, we are referring to the partial coherence factor. This tends to be defined as the spot diameter of the lightsource (or sin(theta) of the max incident angle)
-        #divided by the projection NA or diameter of the entrance pupil. Since, in the Abbe formulation of PCI, each point generates an image, lower sigma means less "smear" (read: better contrast).
+        #divided by the projection NA or diameter of the entrance pupil. Since, in the Abbe formulation of PCI, each point generates an image, the spatial frequencies captured depend on sigma
         #in a physics sense, our diffraction patterns can be seen as smeared shadows of our extended light source, with larger sources leaving less contrast because of the larger angles of incidence
         #https://www.lithoguru.com/scientist/CHE323/Lecture45.pdf, chapter 12 of [7] and chapter 2 of [8] also have some good insights.
         #For annular/quasar sources the inner and outer are defined both in the terms of pcf, that is, in terms of the ratio the inner radius and outer radius take of the NAc/NAp
@@ -34,7 +38,7 @@ class LightSource:
 
         sigmaX = torch.arange(-sigmaSpan-self.shiftX, sigmaSpan-self.shiftX, deltaSigma, dtype=torch.float16, device=self.device)
         sigmaY = torch.arange(-sigmaSpan-self.shiftY, sigmaSpan-self.shiftY, deltaSigma, dtype=torch.float16, device=self.device)
-        #Units of wavelength/NA, where the unit circle sigma=1 will always be the lens apeture size. Refer to eq 2.86 from mack
+        #Units of wavelength/NA, where the unit circle sigma=1 will always be the lens aperture size. Refer to eq 2.86 from mack
         #The key here is that when we calculate the Zernike polynomial, it exists on the unit circle, while our light source (provided sigma<1) will exist within the pupil space
         #We don't need fancy unit juggling here or within the pupil function, because we define the units now and can convert to xy using the NA and wavelength later
 

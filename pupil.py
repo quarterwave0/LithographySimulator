@@ -3,10 +3,14 @@ from math import factorial, sqrt, ceil
 
 class Pupil:
 
-    def __init__(self, pixelNumber: int = 64, wavelength: int = 193, NA: torch.float16 = 0.7, aberrations: torch.Tensor = None, device: torch.device=None):
+    def __init__(self, pixelNumber: int = 64, wavelength: torch.float16 = 193., NA: torch.float16 = 0.7, aberrations: torch.Tensor = None, device: torch.device=None):
 
         if type(device) is torch.device:
             self.device = device
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+            print(f"No device defined for pupil function! Using MPS.")
+            print()
         elif torch.cuda.is_available:
             self.device = torch.device('cuda')
             print(f"No device defined for pupil function! Using {torch.cuda.get_device_name(self.device)}.")
@@ -16,7 +20,7 @@ class Pupil:
 
         if aberrations is None:
             print("No aberrations defined for pupil function! Assuming perfect system.")
-            self.aberrations = [0] #assume perfect lens, so piston=0 and nothing more
+            self.aberrations = torch.tensor([0], dtype=torch.float16, device=device) #assume perfect lens, so piston=0 and nothing more
         else:
             self.aberrations = aberrations
 
@@ -108,11 +112,12 @@ def generatePhi(WE, pixelNumber, device):
 
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
-    aberrations = [0, 0, 0, 1, 3, 0, 0, 1, 0, 0]
-    NA = 0.6
-    wavelength = 193
-    pixelNumber = 64
     device = torch.device('cpu')
+
+    aberrations = torch.tensor([0, 0, 0, 1, 3, 0, 0, 1, 0, 0], dtype=torch.float16, device=device)
+    NA = 0.6
+    wavelength = 193.
+    pixelNumber = 64
 
     pupil = Pupil(pixelNumber, wavelength, NA, aberrations, device)
     PF = pupil.generatePupilFunction()

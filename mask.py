@@ -6,6 +6,10 @@ class Mask:
 
         if type(device) is torch.device:
             self.device = device
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+            print(f"No device defined for mask! Using MPS.")
+            print()
         elif torch.cuda.is_available:
             self.device = torch.device('cuda')
             print(f"No device defined for mask! Using {torch.cuda.get_device_name(self.device)}.")
@@ -30,13 +34,12 @@ class Mask:
         self.deltaK = 4 / self.pixelNumber
         self._Kbound = self.pixelNumber / 2 * self.deltaK
         
-    def fraunhofer(self, wavelength: int, fft: bool) -> torch.Tensor:
+    def fraunhofer(self, wavelength: torch.float16, fft: bool) -> torch.Tensor:
         if fft:
             epsilon, N = self.calculateEpsilonN(self.deltaK, self.pixelSize, wavelength)
             return self._ffFraunhofer(epsilon, N)
         else:
             fraunhoferConstant = (2*1j*torch.pi)/wavelength
-            solution = torch.zeros((self.pixelNumber, self.pixelNumber), dtype=torch.complex64, device=self.device)
 
             kx = torch.arange(-self._Kbound, self._Kbound, self.deltaK, dtype = torch.float16, device=self.device)
             ky = torch.arange(-self._Kbound, self._Kbound, self.deltaK, dtype = torch.float16, device=self.device)
@@ -61,7 +64,7 @@ class Mask:
         squares = torch.tensor([2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384], dtype=torch.int16, device=self.device)
         return squares[torch.argmin(torch.abs(squares - input))].item()
 
-    def calculateEpsilonN(self, deltaK, pixelSize, wavelength):
+    def calculateEpsilonN(self, deltaK, pixelSize: int, wavelength: torch.float16):
         beta = ((deltaK*pixelSize)/wavelength)**-1
         N = self._nearest2SqInt(beta)
         epsilon = N/beta
@@ -71,21 +74,21 @@ class Mask:
     def _ffFraunhofer(self, epsilon, N: int) -> torch.Tensor: #this all comes from [1]
 
         usqMask = self.geometry.unsqueeze(0).unsqueeze(0).to(torch.float32)
-
         scaledMask = torch.nn.functional.interpolate(usqMask, scale_factor=epsilon, mode='bilinear').squeeze(0).squeeze(0)
-        extraSize = (scaledMask.size()[0] - self.pixelNumber) // 2
-        sTrimmedMask = scaledMask[extraSize:extraSize+self.pixelNumber, extraSize:extraSize+self.pixelNumber]
 
-        paddingWidth = (N-self.pixelNumber) // 2
-        padder = torch.nn.ConstantPad2d(paddingWidth, 0)
-        paddedMask = padder(sTrimmedMask)
+        pW = ((N - self.pixelNumber) - (scaledMask.shape[0] - self.pixelNumber)) // 2
+        corr = scaledMask.shape[0] % 2
+        paddedMask = torch.nn.functional.pad(scaledMask, (pW, pW + corr, pW, pW + corr), mode='constant', value=0)
 
         standardForm = torch.fft.fftshift(paddedMask)
-        fraunhoferFFT = torch.fft.fft2(standardForm, s=(N, N), norm="backward")
-        unrolledFFFT = torch.fft.ifftshift(fraunhoferFFT)
-        trimmedFFFT = unrolledFFFT[paddingWidth:paddingWidth+self.pixelNumber, paddingWidth:paddingWidth+self.pixelNumber]
+        fraunhoferFFT = torch.fft.fft2(standardForm, norm="backward")
+        fft = torch.fft.ifftshift(fraunhoferFFT)
 
-        return trimmedFFFT
+        trimFactor = (N - self.pixelNumber) // 2
+        fft = torch.nn.functional.pad(fft, (-trimFactor, -trimFactor, -trimFactor, -trimFactor))
+
+        return fft
+
     
 if __name__ == '__main__':
     from matplotlib import pyplot as plt
