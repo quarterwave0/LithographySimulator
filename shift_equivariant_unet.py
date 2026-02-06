@@ -1,9 +1,15 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-import keras.ops as ops
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Compatibility shim: keras.ops (Keras 3 / TF>=2.16) vs tf ops (Keras 2 / TF<2.16)
+try:
+    import keras.ops as ops
+    _concatenate = ops.concatenate
+except ImportError:
+    _concatenate = tf.concat
 
 
 class CircularPad2D(layers.Layer):
@@ -17,9 +23,9 @@ class CircularPad2D(layers.Layer):
             return x
         p = self.pad
         # Pad height (top/bottom)
-        x = ops.concatenate([x[:, -p:, :, :], x, x[:, :p, :, :]], axis=1)
+        x = _concatenate([x[:, -p:, :, :], x, x[:, :p, :, :]], axis=1)
         # Pad width (left/right)
-        x = ops.concatenate([x[:, :, -p:, :], x, x[:, :, :p, :]], axis=2)
+        x = _concatenate([x[:, :, -p:, :], x, x[:, :, :p, :]], axis=2)
         return x
 
     def get_config(self):
