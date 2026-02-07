@@ -10,7 +10,7 @@ class Mask:
             self.device = torch.device('mps')
             print(f"No device defined for mask! Using MPS.")
             print()
-        elif torch.cuda.is_available:
+        elif torch.cuda.is_available():
             self.device = torch.device('cuda')
             print(f"No device defined for mask! Using {torch.cuda.get_device_name(self.device)}.")
         else:
