@@ -136,13 +136,41 @@ We surveyed three families of approaches: **frequency-domain methods**, **attent
 
 #### 2.3.0 UNeXt / UNeXt-ILT (Tokenized MLP — Domain-Validated)
 - **Papers**: Valanarasu & Patel "UNeXt: MLP-based Rapid Medical Image Segmentation Network" (MICCAI 2022); Lin et al. "UNeXt-ILT: fast and global context-aware inverse lithography solution" (J. Micro/Nanopatterning, Materials, and Metrology, Jan 2025)
-- **Idea**: A hybrid Conv + MLP U-Net architecture. The encoder starts with convolutional stages (local features), then transitions to **Tokenized MLP** blocks in the latent/bottleneck stages. Each Tokenized MLP block: (1) projects spatial features into abstract tokens via learned tokenization, (2) applies MLPs across tokens for global mixing, (3) uses **shifted channels** (axial shifts) to inject local spatial awareness into the MLP.
+- **Idea**: A hybrid Conv + MLP U-Net architecture. The encoder starts with convolutional stages (local features), then transitions to **Tokenized MLP** blocks in the latent/bottleneck stages.
+
+- **Tokenized MLP Block architecture** (from UNeXt-ILT paper diagrams):
+  ```
+  Features
+    → Patch Embed (spatial → token projection)
+    → Layer Norm
+    → Shift Width + Tokenize + MLP     ← horizontal axis global mixing
+    → DWConv + GELU                     ← local spatial refinement
+    → Shift Height + Tokenize + MLP    ← vertical axis global mixing
+    → (+) residual connection           ← skip from input
+    → Layer Norm
+    → Reproject (token → spatial)
+  ```
+  The MLP mixing is **axis-decomposed**: it first shifts and mixes along the width axis, then along the height axis, with a depthwise conv in between for local context. This makes the complexity O(H+W) instead of O(H×W).
+
+- **Overall UNeXt-ILT architecture** (from paper):
+  - U-Net encoder-decoder with 5 resolution levels: H/2→H/4→H/8→H/16→H/32
+  - **Encoder**: Convolutional blocks at high resolution (H/2×16ch, H/4×32ch), Tokenized MLP blocks at low resolution (H/8×128ch, H/16×160ch, H/32×256ch)
+  - **Downsampling**: MaxPooling (2×) — **not shift-equivariant**
+  - **Decoder**: Upsampling + skip connections, symmetric
+  - **ILT pipeline**: UNeXt predicts initial mask → gradient-descent ILT refinement loop (litho simulation → loss → backprop → mask update → binarization)
+
 - **UNeXt-ILT results**: Applied directly to inverse lithography. Compared to SOTA DL-based ILT: **-17.83% L2 error**, **-8.76% PV band**, **-34.48% turnaround time**. These results validate that MLP-based global mixing is highly effective for lithography tasks specifically.
-- **Global reach**: ✅ Full — MLPs across all spatial tokens provide global context; tokenization compresses spatial extent
-- **Shift equivariance**: ⚠️ Partial — The original UNeXt uses strided convolutions (not shift-equivariant). However, the Tokenized MLP mechanism itself is compatible with shift equivariance if: (a) we replace strided convs with dilated circular convs (as in our current architecture), (b) the shifted-channel operation uses circular shifts (`tf.roll`), and (c) tokenization is done via 1×1 convolutions (position-independent). **Adaptation required but feasible.**
-- **Overhead**: Very Low — UNeXt achieves 72× parameter reduction and 68× FLOPs reduction vs transformer-based alternatives. The Tokenized MLP block has only O(T × C) parameters where T is the token count.
-- **ONNX**: ✅ Trivial — standard ops (linear projections, reshape, MLP). No FFT needed.
-- **Physics alignment**: ★★★★★ — **Directly validated on lithography ILT** with significant improvements. The tokenized MLP can learn the frequency-domain mixing that characterizes optical diffraction, while the shifted-channel mechanism captures local OPE interactions.
+
+- **Global reach**: ✅ Full — MLPs across all spatial tokens provide global context; axis-decomposed design covers both dimensions
+- **Shift equivariance**: ⚠️ **Requires significant adaptation** — The original UNeXt-ILT uses MaxPooling for downsampling and processes at reduced spatial resolutions (H/8 to H/32). Our architecture operates at full 64×64 resolution throughout. Key adaptation challenges:
+  1. **No downsampling available**: Our shift-equivariant design forbids strided pooling. The Tokenized MLP must operate at full 64×64 resolution instead of reduced 2×2 or 4×4 feature maps.
+  2. **Token count**: At full resolution, the axis-decomposed MLP mixes 64 tokens per axis (manageable: MLP with 64 input/output dimensions is small).
+  3. **Shift operation**: The axial shift (`Shift Width`, `Shift Height`) can be implemented with `tf.roll` — inherently circular/shift-equivariant.
+  4. **Patch Embed / Reproject**: Must use 1×1 convolutions (position-independent) rather than strided convolutions to preserve equivariance.
+  5. **DWConv**: Must use circular-padded depthwise convolution.
+- **Overhead**: Very Low — UNeXt achieves 72× parameter reduction and 68× FLOPs reduction vs transformer-based alternatives. The Tokenized MLP block has only O(T × C) parameters where T is the token count. At full 64×64: MLP per axis ≈ 64 × C params.
+- **ONNX**: ✅ Trivial — standard ops (linear projections, reshape, MLP, DWConv). No FFT needed.
+- **Physics alignment**: ★★★★★ — **Directly validated on lithography ILT** with significant improvements. The axis-decomposed MLP naturally captures the separable structure of 2D diffraction (Fourier transforms are separable along axes). The DWConv provides local OPE awareness between the two axial mixing stages.
 
 #### 2.3.1 ConvMixer-style Depthwise Mixing
 - **Paper**: Trockman & Kolter (ICLR 2022 workshop)
@@ -245,20 +273,47 @@ We propose a **3-phase implementation plan**, ordered by impact-to-effort ratio:
 - **ONNX note**: Will need opset ≥17 for FFT support, or implement spectral branch as a matrix multiply (DFT matrix × input), which exports cleanly.
 
 #### 2C. UNeXt-style Tokenized MLP at Bottleneck (Domain-Validated)
-- **Where**: Replace bottleneck dilated convolutions with Tokenized MLP blocks
-- **Design**:
+- **Where**: Replace or augment bottleneck dilated convolutions with axis-decomposed Tokenized MLP blocks
+- **Design** (adapted from UNeXt-ILT architecture for shift equivariance at full 64×64 resolution):
   ```
-  # Tokenize: project spatial features to tokens
-  tokens = Conv1x1(x)                    # (B, H, W, C) → (B, H*W, T)
-  # Shifted MLP: circular-shift channels, then MLP
-  tokens_shifted = tf.roll(tokens, shift=s, axis=-1)  # circular channel shift
-  tokens = MLP(tokens_shifted)           # global token mixing
-  # De-tokenize: project back to spatial
-  output = Conv1x1(tokens) + x           # residual connection
+  # Input: x of shape (B, 64, 64, C)
+
+  # --- Patch Embed (equivariant: 1x1 conv, no stride) ---
+  h = Conv1x1(x)                              # (B, 64, 64, C) → (B, 64, 64, D)
+  h = LayerNorm(h)
+
+  # --- Axis-decomposed global mixing ---
+  # Step 1: Width-axis mixing
+  h_w = tf.roll(h, shift=s, axis=2)           # circular shift along W (equivariant)
+  h_w = reshape(h_w, (B*64, 64, D))           # flatten H, tokenize along W
+  h_w = MLP_width(h_w)                        # MLP mixes 64 width tokens globally
+  h_w = reshape(h_w, (B, 64, 64, D))
+
+  # Step 2: Local refinement
+  h_w = CircularDWConv(h_w)                   # circular-padded depthwise conv
+  h_w = GELU(h_w)
+
+  # Step 3: Height-axis mixing
+  h_h = tf.roll(h_w, shift=s, axis=1)         # circular shift along H (equivariant)
+  h_h = reshape(h_h, (B*64, 64, D))           # flatten W, tokenize along H
+  h_h = MLP_height(h_h)                       # MLP mixes 64 height tokens globally
+  h_h = reshape(h_h, (B, 64, 64, D))
+
+  # --- Residual + Reproject ---
+  h_h = h_h + x_residual                      # skip connection
+  output = LayerNorm(h_h)
+  output = Conv1x1(output)                    # (B, 64, 64, D) → (B, 64, 64, C)
   ```
-- **Cost**: Very low — for T=64 tokens, C=256: ~2×T×C ≈ 33K params per block
+- **Cost**: Very low — each MLP is (64→hidden→64) per channel. For D=256, hidden=512: 2×64×512 = 66K params per MLP × 2 axes = ~132K params total per block. Plus DWConv ~2K. **Total ~134K per block (~27% overhead)**.
 - **Why this is compelling**: UNeXt-ILT (Jan 2025) demonstrated **17.83% L2 error reduction** and **34.48% faster turnaround** on lithography ILT tasks using exactly this backbone. This is the only method in our survey with **direct lithography domain validation**.
-- **Shift equivariance adaptation**: Replace UNeXt's original strided convolutions with our existing dilated circular convolutions. Use `tf.roll` for the channel-shifting operation (already shift-equivariant). Tokenization via 1×1 conv is position-independent → equivariant.
+- **Shift equivariance analysis**:
+  1. `Conv1x1` — position-independent → ✅ equivariant
+  2. `tf.roll` — circular shift → ✅ equivariant (and commutes with input shifts)
+  3. Width/Height MLP — applied identically at every position along the other axis → ✅ equivariant
+  4. `CircularDWConv` — circular-padded depthwise conv → ✅ equivariant
+  5. `LayerNorm` — per-sample normalization → ✅ equivariant
+  6. **Overall**: ✅ Fully shift-equivariant as designed above (no pooling, no strided ops)
+- **Key difference from original UNeXt**: Original operates on spatially-reduced feature maps (H/8 to H/32) via MaxPooling. We operate at full 64×64 resolution. The axis-decomposed design makes this tractable: MLP operates on 64 tokens per axis, not 64×64=4096 tokens.
 - **ONNX**: ✅ Standard ops only — no FFT needed, unlike Phases 2A/2B
 
 **Expected outcome**: 15–30% MSE reduction, especially for patterns with strong periodicity (line/space gratings, contact arrays). The network can learn the physics rather than approximating it through many conv layers. Phase 2C (UNeXt MLP) offers the best risk-adjusted return given its domain validation.
