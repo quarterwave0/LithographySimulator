@@ -134,6 +134,16 @@ We surveyed three families of approaches: **frequency-domain methods**, **attent
 
 ### 2.3 MLP / Global Mixing Layers
 
+#### 2.3.0 UNeXt / UNeXt-ILT (Tokenized MLP — Domain-Validated)
+- **Papers**: Valanarasu & Patel "UNeXt: MLP-based Rapid Medical Image Segmentation Network" (MICCAI 2022); Lin et al. "UNeXt-ILT: fast and global context-aware inverse lithography solution" (J. Micro/Nanopatterning, Materials, and Metrology, Jan 2025)
+- **Idea**: A hybrid Conv + MLP U-Net architecture. The encoder starts with convolutional stages (local features), then transitions to **Tokenized MLP** blocks in the latent/bottleneck stages. Each Tokenized MLP block: (1) projects spatial features into abstract tokens via learned tokenization, (2) applies MLPs across tokens for global mixing, (3) uses **shifted channels** (axial shifts) to inject local spatial awareness into the MLP.
+- **UNeXt-ILT results**: Applied directly to inverse lithography. Compared to SOTA DL-based ILT: **-17.83% L2 error**, **-8.76% PV band**, **-34.48% turnaround time**. These results validate that MLP-based global mixing is highly effective for lithography tasks specifically.
+- **Global reach**: ✅ Full — MLPs across all spatial tokens provide global context; tokenization compresses spatial extent
+- **Shift equivariance**: ⚠️ Partial — The original UNeXt uses strided convolutions (not shift-equivariant). However, the Tokenized MLP mechanism itself is compatible with shift equivariance if: (a) we replace strided convs with dilated circular convs (as in our current architecture), (b) the shifted-channel operation uses circular shifts (`tf.roll`), and (c) tokenization is done via 1×1 convolutions (position-independent). **Adaptation required but feasible.**
+- **Overhead**: Very Low — UNeXt achieves 72× parameter reduction and 68× FLOPs reduction vs transformer-based alternatives. The Tokenized MLP block has only O(T × C) parameters where T is the token count.
+- **ONNX**: ✅ Trivial — standard ops (linear projections, reshape, MLP). No FFT needed.
+- **Physics alignment**: ★★★★★ — **Directly validated on lithography ILT** with significant improvements. The tokenized MLP can learn the frequency-domain mixing that characterizes optical diffraction, while the shifted-channel mechanism captures local OPE interactions.
+
 #### 2.3.1 ConvMixer-style Depthwise Mixing
 - **Paper**: Trockman & Kolter (ICLR 2022 workshop)
 - **Idea**: Large-kernel depthwise convolutions (e.g., 9×9) for spatial mixing + pointwise convolutions for channel mixing.
@@ -176,6 +186,7 @@ We surveyed three families of approaches: **frequency-domain methods**, **attent
 
 | Method | Global Reach | Shift Equivariant | Params Overhead | FLOPs Overhead | ONNX Export | Physics Fit |
 |--------|-------------|-------------------|-----------------|---------------|-------------|-------------|
+| **UNeXt Tokenized MLP** | ✅ Full | ⚠️ Needs adapt | Very Low | Very Low | ✅ | ★★★★★ |
 | **FFC (Spectral Branch)** | ✅ Full | ✅ | Low (~5-10%) | Low | ⚠️ FFT ops | ★★★★★ |
 | **AFNO** | ✅ Full | ✅ | Very Low | Very Low | ⚠️ FFT ops | ★★★★★ |
 | **GFNet** | ✅ Full | ✅ | Very Low | Low | ⚠️ FFT ops | ★★★★★ |
@@ -233,7 +244,24 @@ We propose a **3-phase implementation plan**, ordered by impact-to-effort ratio:
 - **Benefit**: Continuous local-global information exchange. More expressive than a single GFNet filter.
 - **ONNX note**: Will need opset ≥17 for FFT support, or implement spectral branch as a matrix multiply (DFT matrix × input), which exports cleanly.
 
-**Expected outcome**: 15–30% MSE reduction, especially for patterns with strong periodicity (line/space gratings, contact arrays). The network can learn the physics rather than approximating it through many conv layers.
+#### 2C. UNeXt-style Tokenized MLP at Bottleneck (Domain-Validated)
+- **Where**: Replace bottleneck dilated convolutions with Tokenized MLP blocks
+- **Design**:
+  ```
+  # Tokenize: project spatial features to tokens
+  tokens = Conv1x1(x)                    # (B, H, W, C) → (B, H*W, T)
+  # Shifted MLP: circular-shift channels, then MLP
+  tokens_shifted = tf.roll(tokens, shift=s, axis=-1)  # circular channel shift
+  tokens = MLP(tokens_shifted)           # global token mixing
+  # De-tokenize: project back to spatial
+  output = Conv1x1(tokens) + x           # residual connection
+  ```
+- **Cost**: Very low — for T=64 tokens, C=256: ~2×T×C ≈ 33K params per block
+- **Why this is compelling**: UNeXt-ILT (Jan 2025) demonstrated **17.83% L2 error reduction** and **34.48% faster turnaround** on lithography ILT tasks using exactly this backbone. This is the only method in our survey with **direct lithography domain validation**.
+- **Shift equivariance adaptation**: Replace UNeXt's original strided convolutions with our existing dilated circular convolutions. Use `tf.roll` for the channel-shifting operation (already shift-equivariant). Tokenization via 1×1 conv is position-independent → equivariant.
+- **ONNX**: ✅ Standard ops only — no FFT needed, unlike Phases 2A/2B
+
+**Expected outcome**: 15–30% MSE reduction, especially for patterns with strong periodicity (line/space gratings, contact arrays). The network can learn the physics rather than approximating it through many conv layers. Phase 2C (UNeXt MLP) offers the best risk-adjusted return given its domain validation.
 
 ### Phase 3: Advanced Global Mixing (Experimental)
 **Goal**: Explore more expressive global mixing for further gains.
@@ -268,7 +296,8 @@ We propose a **3-phase implementation plan**, ordered by impact-to-effort ratio:
 ```
                     Low Effort ──────────────────── High Effort
                     │                                         │
-High Impact    ★★★ │  (2A) GFNet bottleneck    (2B) FFC dual │ ★★★
+High Impact    ★★★ │  (2C) UNeXt MLP ★★★★     (2B) FFC dual │ ★★★
+                    │  (2A) GFNet bottleneck                   │
                     │  (1A) SE blocks                          │
                     │                                         │
                     │  (1B) Attention Gates     (3A) AFNO     │
@@ -278,14 +307,19 @@ Low Impact     ★   │  ConvMixer DW             (3C) RepLK    │ ★
                     │                                         │
 ```
 
+**(2C) UNeXt MLP is marked ★★★★ because it is the only method with direct lithography domain validation (UNeXt-ILT, Jan 2025).**
+
 **Recommended implementation order**:
 1. **SE Blocks** (1A) — easiest win, validate pipeline
 2. **Attention Gates** (1B) — proven U-Net enhancement
-3. **GFNet Bottleneck** (2A) — highest physics alignment, moderate effort
-4. **FFC Dual Branch** (2B) — if GFNet shows promise, extend to dual-branch
-5. **AFNO** (3A) — if spectral approach works, try nonlinear version
-6. **Restormer MDTA** (3B) — if channel interactions matter
-7. **RepLK** (3C) — alternative to dilation if gridding artifacts observed
+3. **UNeXt Tokenized MLP** (2C) — **domain-validated** on lithography, lightweight, ONNX-friendly, no FFT export issues
+4. **GFNet Bottleneck** (2A) — highest physics alignment, but needs FFT in ONNX
+5. **FFC Dual Branch** (2B) — if GFNet shows promise, extend to dual-branch
+6. **AFNO** (3A) — if spectral approach works, try nonlinear version
+7. **Restormer MDTA** (3B) — if channel interactions matter
+8. **RepLK** (3C) — alternative to dilation if gridding artifacts observed
+
+> **Key insight from UNeXt-ILT**: The Tokenized MLP approach achieves comparable or better global context than FFT-based methods while being dramatically simpler to export (no FFT ops in ONNX). For our use case where ONNX compatibility is a hard requirement, this makes Phase 2C the **recommended primary path**, with FFT-based methods (2A, 2B) as complementary enhancements if further gains are needed.
 
 ---
 
@@ -310,11 +344,12 @@ Current model: ~488K parameters, ~X MFLOPs for 64×64 input.
 | Phase | Additional Params | Relative Increase |
 |-------|------------------|-------------------|
 | 1 (SE + AG) | ~25K | +5% |
-| 2 (GFNet) | ~540K | +110% (but most are simple element-wise) |
-| 2 (FFC) | ~100K | +20% |
+| 2C (UNeXt MLP) | ~33K per block | +7% |
+| 2A (GFNet) | ~540K | +110% (but most are simple element-wise) |
+| 2B (FFC) | ~100K | +20% |
 | 3 (AFNO) | ~130K | +27% |
 
-Phase 1 stays well within the "minimal overhead" goal. Phase 2 with GFNet doubles parameters but the new parameters are frequency-domain weights (element-wise multiply), not convolution weights, so FLOPs increase is modest.
+Phase 1 stays well within the "minimal overhead" goal. Phase 2C (UNeXt MLP) is the lightest Phase 2 option — only ~33K extra parameters per Tokenized MLP block, adding ~7% to the model. Phase 2A with GFNet doubles parameters but the new parameters are frequency-domain weights (element-wise multiply), not convolution weights, so FLOPs increase is modest.
 
 ---
 
@@ -351,3 +386,5 @@ The frequency-domain methods (Phase 2) should show the largest improvement on **
 13. Ding et al., "Scaling Up Your Kernels to 31×31: Revisiting Large Kernel Design in CNNs (RepLKNet)," CVPR 2022
 14. Liu et al., "More ConvNets in the 2020s: Scaling up Kernels Beyond 51×51 (SLaK)," ICLR 2023
 15. Rao et al., "HorNet: Efficient High-Order Spatial Interactions with Recursive Gated Convolutions," NeurIPS 2022
+16. Valanarasu & Patel, "UNeXt: MLP-based Rapid Medical Image Segmentation Network," MICCAI 2022
+17. Lin et al., "UNeXt-ILT: fast and global context-aware inverse lithography solution," J. Micro/Nanopatterning, Materials, and Metrology 24(1), 013201, January 2025
