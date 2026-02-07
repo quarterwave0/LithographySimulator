@@ -11,7 +11,15 @@ try:
 except ImportError:
     _concatenate = tf.concat
 
+# Serialization decorator for Keras 3; no-op on Keras 2
+try:
+    _register = keras.saving.register_keras_serializable(package='litho')
+except AttributeError:
+    def _register(cls):
+        return cls
 
+
+@_register
 class CircularPad2D(layers.Layer):
     """Circular (wrap-around) padding layer for 2D spatial data."""
     def __init__(self, padding, **kwargs):
@@ -34,6 +42,7 @@ class CircularPad2D(layers.Layer):
         return config
 
 
+@_register
 class CircularConv2D(layers.Layer):
     """Conv2D layer with circular padding for shift equivariance"""
     def __init__(self, filters, kernel_size, strides=1, activation=None, use_bias=False, **kwargs):
@@ -79,6 +88,7 @@ class CircularConv2D(layers.Layer):
         return config
 
 
+@_register
 class DilatedCircularConv2D(layers.Layer):
     """Dilated Conv2D with circular padding, GroupNorm, and ReLU."""
     def __init__(self, filters, kernel_size=3, dilation_rate=1, **kwargs):
