@@ -31,6 +31,7 @@ from shift_equivariant_unet import (
     CircularPad2D,
     CircularConv2D,
     DilatedCircularConv2D,
+    TokenizedMLPBlock,
 )
 from data_pipeline import (
     generate_dataset,
@@ -83,6 +84,59 @@ def build_model(input_shape=(64, 64, 1), num_filters_base=32):
 
     model = keras.Model(inputs=inputs, outputs=outputs,
                         name='litho_unet')
+    return model
+
+
+def build_model_with_tokenized_mlp(input_shape=(64, 64, 1), num_filters_base=32,
+                                    num_mlp_blocks=2, axis_kernel=31):
+    """Build shift-equivariant U-Net with TokenizedMLP bottleneck.
+
+    Replaces the dilated conv bottleneck with axis-decomposed global
+    mixing blocks (UNeXt-style, adapted for shift equivariance) using
+    large-kernel circular depthwise convolutions along each axis.
+    """
+    inputs = keras.Input(shape=input_shape)
+
+    # Encoder (same as baseline)
+    x = CircularConv2D(num_filters_base, 3, activation='relu')(inputs)
+    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
+    feat1 = x
+
+    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(feat1)
+    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
+    feat2 = x
+
+    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(feat2)
+    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
+    feat3 = x
+
+    # Bottleneck: project to bottleneck dim, then TokenizedMLP blocks
+    bottleneck_dim = num_filters_base * 8
+    x = CircularConv2D(bottleneck_dim, 1, activation='relu')(feat3)
+    for _ in range(num_mlp_blocks):
+        x = TokenizedMLPBlock(
+            dim=bottleneck_dim,
+            axis_kernel=axis_kernel,
+        )(x)
+
+    # Decoder (same as baseline)
+    x = keras.layers.Concatenate()([x, feat3])
+    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
+    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
+
+    x = keras.layers.Concatenate()([x, feat2])
+    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
+    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
+
+    x = keras.layers.Concatenate()([x, feat1])
+    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
+    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
+
+    # Output
+    outputs = CircularConv2D(1, 1, activation='sigmoid')(x)
+
+    model = keras.Model(inputs=inputs, outputs=outputs,
+                        name='litho_unet_tokenized_mlp')
     return model
 
 
@@ -159,6 +213,13 @@ def main():
                         help='Random seed')
     parser.add_argument('--save-model', type=str, default='litho_model.keras',
                         help='Path to save trained model')
+    parser.add_argument('--model', type=str, default='baseline',
+                        choices=['baseline', 'tokenized_mlp'],
+                        help='Model variant: baseline or tokenized_mlp')
+    parser.add_argument('--mlp-blocks', type=int, default=2,
+                        help='Number of TokenizedMLP blocks (tokenized_mlp only)')
+    parser.add_argument('--axis-kernel', type=int, default=31,
+                        help='Axis conv kernel size (tokenized_mlp only)')
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -200,9 +261,17 @@ def main():
 
     # ----- Model -----
     input_shape = masks.shape[1:]  # (64, 64, 1)
-    model = build_model(input_shape=input_shape,
-                        num_filters_base=args.filters)
-    print(f"\nModel: {model.count_params():,} parameters")
+    if args.model == 'tokenized_mlp':
+        model = build_model_with_tokenized_mlp(
+            input_shape=input_shape,
+            num_filters_base=args.filters,
+            num_mlp_blocks=args.mlp_blocks,
+            axis_kernel=args.axis_kernel,
+        )
+    else:
+        model = build_model(input_shape=input_shape,
+                            num_filters_base=args.filters)
+    print(f"\nModel ({args.model}): {model.count_params():,} parameters")
     model.summary()
 
     model.compile(

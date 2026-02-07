@@ -125,6 +125,173 @@ class DilatedCircularConv2D(layers.Layer):
         return config
 
 
+@_register
+class CircularDepthwiseConv2D(layers.Layer):
+    """Depthwise Conv2D with circular padding."""
+    def __init__(self, kernel_size=3, **kwargs):
+        super().__init__(**kwargs)
+        self.kernel_size = kernel_size
+        pad = (kernel_size - 1) // 2
+        self.pad_layer = CircularPad2D(pad)
+        self.dw_conv = layers.DepthwiseConv2D(
+            kernel_size=kernel_size, padding='valid', use_bias=True
+        )
+
+    def call(self, x):
+        x = self.pad_layer(x)
+        x = self.dw_conv(x)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({'kernel_size': self.kernel_size})
+        return config
+
+
+@_register
+class CircularPad1D(layers.Layer):
+    """Circular padding along a single spatial axis (height or width)."""
+    def __init__(self, padding, axis='width', **kwargs):
+        super().__init__(**kwargs)
+        self.pad = padding
+        self.axis = axis
+
+    def call(self, x):
+        if self.pad <= 0:
+            return x
+        p = self.pad
+        if self.axis == 'height':
+            # Pad along axis=1 (height)
+            x = _concatenate([x[:, -p:, :, :], x, x[:, :p, :, :]], axis=1)
+        else:
+            # Pad along axis=2 (width)
+            x = _concatenate([x[:, :, -p:, :], x, x[:, :, :p, :]], axis=2)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({'padding': self.pad, 'axis': self.axis})
+        return config
+
+
+@_register
+class AxisCircularConv(layers.Layer):
+    """Large-kernel depthwise circular convolution along a single axis.
+
+    Performs depthwise conv with kernel (1, K) or (K, 1) with circular
+    padding along the appropriate axis only, followed by a pointwise
+    (1x1) conv for channel mixing.
+    This is the shift-equivariant replacement for UNeXt's spatial MLP.
+    """
+    def __init__(self, filters, axis='width', kernel_size=31, **kwargs):
+        super().__init__(**kwargs)
+        self.filters = filters
+        self.axis = axis
+        self.ks = kernel_size
+        pad = (kernel_size - 1) // 2
+        self.pad_layer = CircularPad1D(pad, axis=axis)
+        if axis == 'width':
+            k = (1, kernel_size)
+        else:
+            k = (kernel_size, 1)
+        self.dw_conv = layers.DepthwiseConv2D(
+            kernel_size=k, padding='valid', use_bias=False
+        )
+        self.pw_conv = layers.Conv2D(filters, 1, use_bias=True)
+
+    def call(self, x):
+        x = self.pad_layer(x)
+        x = self.dw_conv(x)
+        x = self.pw_conv(x)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'filters': self.filters,
+            'axis': self.axis,
+            'kernel_size': self.ks,
+        })
+        return config
+
+
+@_register
+class TokenizedMLPBlock(layers.Layer):
+    """Axis-decomposed global mixing block with shift equivariance.
+
+    Adapted from UNeXt (MICCAI 2022) / UNeXt-ILT (JMM 2025).
+    Replaces UNeXt's spatial MLP (not shift-equivariant) with
+    large-kernel depthwise circular convolutions along each axis
+    (shift-equivariant circular convolutions).
+
+    Structure:
+      1. Large-kernel circular depthwise conv along width + pointwise
+      2. Local circular depthwise conv + GELU (spatial refinement)
+      3. Large-kernel circular depthwise conv along height + pointwise
+      4. Residual connection
+
+    All operations are shift-equivariant via circular padding.
+    """
+    def __init__(self, dim, axis_kernel=31, dw_kernel=3, **kwargs):
+        super().__init__(**kwargs)
+        self.dim = dim
+        self.axis_kernel = axis_kernel
+        self.dw_kernel = dw_kernel
+
+    def build(self, input_shape):
+        dim = self.dim
+
+        self.norm1 = layers.LayerNormalization(epsilon=1e-6)
+
+        # Width-axis global mixing: large circular depthwise conv
+        self.width_mix = AxisCircularConv(
+            dim, axis='width', kernel_size=self.axis_kernel)
+        self.act1 = layers.Activation('gelu')
+
+        # Local refinement: small circular depthwise conv
+        self.dw_conv = CircularDepthwiseConv2D(kernel_size=self.dw_kernel)
+        self.act2 = layers.Activation('gelu')
+
+        # Height-axis global mixing: large circular depthwise conv
+        self.height_mix = AxisCircularConv(
+            dim, axis='height', kernel_size=self.axis_kernel)
+        self.act3 = layers.Activation('gelu')
+
+        self.norm2 = layers.LayerNormalization(epsilon=1e-6)
+        super().build(input_shape)
+
+    def call(self, x):
+        # x: (B, H, W, C)
+        residual = x
+        x = self.norm1(x)
+
+        # Width-axis near-global mixing
+        x = self.width_mix(x)
+        x = self.act1(x)
+
+        # Local spatial refinement
+        x = self.dw_conv(x)
+        x = self.act2(x)
+
+        # Height-axis near-global mixing
+        x = self.height_mix(x)
+        x = self.act3(x)
+
+        # Residual
+        x = x + residual
+        x = self.norm2(x)
+        return x
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'dim': self.dim,
+            'axis_kernel': self.axis_kernel,
+            'dw_kernel': self.dw_kernel,
+        })
+        return config
+
+
 def multi_scale_feature_block(x, filters):
     """Multi-scale feature extraction without spatial pooling"""
     conv1 = DilatedCircularConv2D(filters // 4, dilation_rate=1)(x)
