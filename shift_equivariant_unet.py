@@ -4,6 +4,8 @@ from tensorflow.keras import layers
 import numpy as np
 import matplotlib.pyplot as plt
 
+from fft_conv import fft_circular_depthwise_conv1d
+
 # Compatibility shim: keras.ops (Keras 3 / TF>=2.16) vs tf ops (Keras 2 / TF<2.16)
 try:
     import keras.ops as ops
@@ -198,28 +200,67 @@ class AxisCircularConv(layers.Layer):
     padding along the appropriate axis only, followed by a pointwise
     (1x1) conv for channel mixing.
     This is the shift-equivariant replacement for UNeXt's spatial MLP.
+
+    When ``kernel_size >= fft_threshold`` the depthwise convolution is
+    computed via FFT-based circular cross-correlation instead of spatial
+    ``DepthwiseConv2D``, which is significantly faster for large kernels.
+    The two paths produce numerically close results (float32 precision).
     """
-    def __init__(self, filters, axis='width', kernel_size=31, **kwargs):
+    # Kernel size at or above which FFT path is used instead of spatial conv.
+    FFT_KERNEL_THRESHOLD = 11
+
+    def __init__(self, filters, axis='width', kernel_size=31,
+                 fft_threshold=None, **kwargs):
         super().__init__(**kwargs)
         self.filters = filters
         self.axis = axis
         self.ks = kernel_size
-        pad = (kernel_size - 1) // 2
-        self.pad_layer = CircularPad1D(pad, axis=axis)
-        if axis == 'width':
-            k = (1, kernel_size)
+        self._fft_threshold = (fft_threshold if fft_threshold is not None
+                               else self.FFT_KERNEL_THRESHOLD)
+        self._use_fft = (kernel_size >= self._fft_threshold)
+
+        if self._use_fft:
+            # Weights are created in build(); no spatial conv layers needed.
+            pass
         else:
-            k = (kernel_size, 1)
-        self.dw_conv = layers.DepthwiseConv2D(
-            kernel_size=k, padding='valid', use_bias=False
-        )
+            pad = (kernel_size - 1) // 2
+            self.pad_layer = CircularPad1D(pad, axis=axis)
+            if axis == 'width':
+                k = (1, kernel_size)
+            else:
+                k = (kernel_size, 1)
+            self.dw_conv = layers.DepthwiseConv2D(
+                kernel_size=k, padding='valid', use_bias=False
+            )
+
         self.pw_conv = layers.Conv2D(filters, 1, use_bias=True)
 
+    def build(self, input_shape):
+        if self._use_fft:
+            C = input_shape[-1]
+            # Depthwise kernel: one 1-D kernel of length K per channel → (K, C)
+            self._dw_kernel = self.add_weight(
+                name='fft_depthwise_kernel',
+                shape=(self.ks, C),
+                initializer='glorot_uniform',
+                trainable=True,
+            )
+        super().build(input_shape)
+
     def call(self, x):
-        x = self.pad_layer(x)
-        x = self.dw_conv(x)
+        if self._use_fft:
+            conv_axis = 2 if self.axis == 'width' else 1
+            x = fft_circular_depthwise_conv1d(
+                x, self._dw_kernel, axis=conv_axis)
+        else:
+            x = self.pad_layer(x)
+            x = self.dw_conv(x)
         x = self.pw_conv(x)
         return x
+
+    def compute_output_shape(self, input_shape):
+        # Spatial dims are preserved (circular conv); only channels change.
+        return (*input_shape[:-1], self.filters)
 
     def get_config(self):
         config = super().get_config()
@@ -227,6 +268,7 @@ class AxisCircularConv(layers.Layer):
             'filters': self.filters,
             'axis': self.axis,
             'kernel_size': self.ks,
+            'fft_threshold': self._fft_threshold,
         })
         return config
 
