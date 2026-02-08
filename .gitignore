@@ -2,3 +2,13 @@ __pycache__
 .vscode
 .DS_Store
 /.idea
+
+# Generated artifacts
+*.npz
+*.keras
+*.onnx
+_litho_saved_model/
+sanity_check.png
+predictions.png
+training_history.png
+shift_equivariance_test.png
