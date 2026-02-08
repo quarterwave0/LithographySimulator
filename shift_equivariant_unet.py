@@ -175,6 +175,22 @@ class CircularPad1D(layers.Layer):
 
 
 @_register
+class GELUApprox(layers.Layer):
+    """GELU activation using tanh approximation (ONNX-friendly).
+
+    Uses: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    This avoids the Erfc op that Keras 3's native GELU uses,
+    which tf2onnx cannot convert.
+    """
+    def call(self, x):
+        coeff = tf.cast(0.7978845608028654, x.dtype)   # sqrt(2/pi)
+        return 0.5 * x * (1.0 + tf.math.tanh(coeff * (x + 0.044715 * x * x * x)))
+
+    def get_config(self):
+        return super().get_config()
+
+
+@_register
 class AxisCircularConv(layers.Layer):
     """Large-kernel depthwise circular convolution along a single axis.
 
@@ -246,16 +262,16 @@ class TokenizedMLPBlock(layers.Layer):
         # Width-axis global mixing: large circular depthwise conv
         self.width_mix = AxisCircularConv(
             dim, axis='width', kernel_size=self.axis_kernel)
-        self.act1 = layers.Activation('gelu')
+        self.act1 = GELUApprox()
 
         # Local refinement: small circular depthwise conv
         self.dw_conv = CircularDepthwiseConv2D(kernel_size=self.dw_kernel)
-        self.act2 = layers.Activation('gelu')
+        self.act2 = GELUApprox()
 
         # Height-axis global mixing: large circular depthwise conv
         self.height_mix = AxisCircularConv(
             dim, axis='height', kernel_size=self.axis_kernel)
-        self.act3 = layers.Activation('gelu')
+        self.act3 = GELUApprox()
 
         self.norm2 = layers.LayerNormalization(epsilon=1e-6)
         super().build(input_shape)
