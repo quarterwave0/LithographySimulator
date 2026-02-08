@@ -26,7 +26,7 @@ from tensorflow import keras
 from shift_equivariant_unet import (
     CircularPad2D, CircularConv2D, DilatedCircularConv2D
 )
-from train import build_model
+from model_baseline import build_model
 
 
 def get_trained_model(keras_path=None, dataset_path='litho_dataset.npz',

@@ -13,6 +13,9 @@ Usage:
 
     # Train from existing dataset:
     python train.py --dataset litho_dataset.npz --epochs 50
+
+    # Train the TokenizedMLP variant:
+    python train.py --model tokenized_mlp --save-model litho_model_mlp.keras
 """
 
 import os
@@ -26,118 +29,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from shift_equivariant_unet import (
-    shift_equivariant_unet,
-    CircularPad2D,
-    CircularConv2D,
-    DilatedCircularConv2D,
-    TokenizedMLPBlock,
-)
+from model_baseline import build_model as build_baseline
+from model_tokenized_mlp import build_model as build_tokenized_mlp
 from data_pipeline import (
     generate_dataset,
     save_dataset,
     load_dataset,
     make_tf_dataset,
 )
-
-
-def build_model(input_shape=(64, 64, 1), num_filters_base=32):
-    """Build a smaller shift-equivariant U-Net for 64x64 litho data.
-
-    Uses reduced filter counts compared to the full model since
-    64x64 inputs don't need as much capacity.
-    """
-    inputs = keras.Input(shape=input_shape)
-
-    # Encoder
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(inputs)
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-    feat1 = x
-
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(feat1)
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-    feat2 = x
-
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(feat2)
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-    feat3 = x
-
-    # Bottleneck
-    x = DilatedCircularConv2D(num_filters_base * 8, dilation_rate=8)(feat3)
-    x = DilatedCircularConv2D(num_filters_base * 8, dilation_rate=8)(x)
-
-    # Decoder
-    x = keras.layers.Concatenate()([x, feat3])
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-
-    x = keras.layers.Concatenate()([x, feat2])
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-
-    x = keras.layers.Concatenate()([x, feat1])
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-
-    # Output: single channel, sigmoid for [0,1] range
-    outputs = CircularConv2D(1, 1, activation='sigmoid')(x)
-
-    model = keras.Model(inputs=inputs, outputs=outputs,
-                        name='litho_unet')
-    return model
-
-
-def build_model_with_tokenized_mlp(input_shape=(64, 64, 1), num_filters_base=32,
-                                    num_mlp_blocks=2, axis_kernel=31):
-    """Build shift-equivariant U-Net with TokenizedMLP bottleneck.
-
-    Replaces the dilated conv bottleneck with axis-decomposed global
-    mixing blocks (UNeXt-style, adapted for shift equivariance) using
-    large-kernel circular depthwise convolutions along each axis.
-    """
-    inputs = keras.Input(shape=input_shape)
-
-    # Encoder (same as baseline)
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(inputs)
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-    feat1 = x
-
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(feat1)
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-    feat2 = x
-
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(feat2)
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-    feat3 = x
-
-    # Bottleneck: project to bottleneck dim, then TokenizedMLP blocks
-    bottleneck_dim = num_filters_base * 8
-    x = CircularConv2D(bottleneck_dim, 1, activation='relu')(feat3)
-    for _ in range(num_mlp_blocks):
-        x = TokenizedMLPBlock(
-            dim=bottleneck_dim,
-            axis_kernel=axis_kernel,
-        )(x)
-
-    # Decoder (same as baseline)
-    x = keras.layers.Concatenate()([x, feat3])
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-    x = DilatedCircularConv2D(num_filters_base * 4, dilation_rate=4)(x)
-
-    x = keras.layers.Concatenate()([x, feat2])
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-    x = DilatedCircularConv2D(num_filters_base * 2, dilation_rate=2)(x)
-
-    x = keras.layers.Concatenate()([x, feat1])
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-    x = CircularConv2D(num_filters_base, 3, activation='relu')(x)
-
-    # Output
-    outputs = CircularConv2D(1, 1, activation='sigmoid')(x)
-
-    model = keras.Model(inputs=inputs, outputs=outputs,
-                        name='litho_unet_tokenized_mlp')
-    return model
 
 
 def plot_training_history(history, save_path='training_history.png'):
@@ -262,15 +161,15 @@ def main():
     # ----- Model -----
     input_shape = masks.shape[1:]  # (64, 64, 1)
     if args.model == 'tokenized_mlp':
-        model = build_model_with_tokenized_mlp(
+        model = build_tokenized_mlp(
             input_shape=input_shape,
             num_filters_base=args.filters,
             num_mlp_blocks=args.mlp_blocks,
             axis_kernel=args.axis_kernel,
         )
     else:
-        model = build_model(input_shape=input_shape,
-                            num_filters_base=args.filters)
+        model = build_baseline(input_shape=input_shape,
+                               num_filters_base=args.filters)
     print(f"\nModel ({args.model}): {model.count_params():,} parameters")
     model.summary()
 
