@@ -87,7 +87,7 @@ if __name__ == '__main__':
         device = torch.device('mps')
         print(f"Using MPS")
         print()
-    elif torch.cuda.is_available:
+    elif torch.cuda.is_available():
         device = torch.device('cuda')
         print(f"Using {torch.cuda.get_device_name(device)}")
         print()
