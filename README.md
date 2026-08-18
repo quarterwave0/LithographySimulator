@@ -1,3 +1,6 @@
+> [!NOTE]
+> This repo does not contain AI-generated code. A private version that does is available upon request.
+
 ## About
 LithographySimulator is an open-source tool/toy for modeling optical lithography. 
 
